@@ -9,6 +9,8 @@ interface SettingsStore {
     fun setPinnedCertificate(origin: String, pem: String)
     fun isHttpAcknowledged(origin: String): Boolean
     fun setHttpAcknowledged(origin: String, acknowledged: Boolean)
+    fun getLibraryId(): String
+    fun setLibraryId(value: String)
 }
 
 class MemorySettingsStore : SettingsStore {
@@ -16,6 +18,7 @@ class MemorySettingsStore : SettingsStore {
     private var deviceId: String = ""
     private val pins = mutableMapOf<String, String>()
     private val httpAck = mutableSetOf<String>()
+    private var libraryId: String = ""
 
     override fun getServerUrl(): String = serverUrl
     override fun setServerUrl(value: String) {
@@ -37,5 +40,11 @@ class MemorySettingsStore : SettingsStore {
 
     override fun setHttpAcknowledged(origin: String, acknowledged: Boolean) {
         if (acknowledged) httpAck.add(origin) else httpAck.remove(origin)
+    }
+
+    override fun getLibraryId(): String = libraryId
+
+    override fun setLibraryId(value: String) {
+        libraryId = value
     }
 }

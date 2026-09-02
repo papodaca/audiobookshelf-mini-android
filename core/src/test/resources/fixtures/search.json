@@ -1,0 +1,34 @@
+{
+  "book": [
+    {
+      "libraryItem": {
+        "id": "item-single",
+        "libraryId": "lib-books",
+        "mediaType": "book",
+        "media": {
+          "metadata": {
+            "title": "The Single File Book",
+            "authorName": "Ada Author"
+          },
+          "numTracks": 1
+        }
+      }
+    }
+  ],
+  "podcast": [
+    {
+      "libraryItem": {
+        "id": "item-podcast",
+        "libraryId": "lib-pods",
+        "mediaType": "podcast",
+        "media": {
+          "metadata": {
+            "title": "A Podcast",
+            "authorName": "Host"
+          },
+          "numEpisodes": 12
+        }
+      }
+    }
+  ]
+}

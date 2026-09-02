@@ -1,0 +1,22 @@
+{
+  "libraries": [
+    {
+      "id": "lib-books",
+      "name": "Audiobooks",
+      "mediaType": "book",
+      "folders": [],
+      "displayOrder": 1,
+      "icon": "audiobookshelf",
+      "provider": "google"
+    },
+    {
+      "id": "lib-pods",
+      "name": "Podcasts",
+      "mediaType": "podcast",
+      "folders": [],
+      "displayOrder": 2,
+      "icon": "podcast",
+      "provider": "itunes"
+    }
+  ]
+}

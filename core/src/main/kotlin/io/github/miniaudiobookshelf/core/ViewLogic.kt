@@ -78,4 +78,128 @@ object ViewLogic {
             else -> ConnectFailure.UNREACHABLE
         }
     }
+
+    enum class PlayDecision {
+        START,
+        RESUME,
+        START_OVER,
+        NOT_PLAYABLE,
+    }
+
+    fun playDecision(item: LibraryItem): PlayDecision {
+        if (!item.playable) return PlayDecision.NOT_PLAYABLE
+        val progress = item.progress
+        if (progress != null && progress.isFinished) return PlayDecision.START_OVER
+        if (progress != null && progress.currentTime > 0) return PlayDecision.RESUME
+        return PlayDecision.START
+    }
+
+    fun playLabel(decision: PlayDecision): String {
+        return when (decision) {
+            PlayDecision.START -> "Play"
+            PlayDecision.RESUME -> "Resume"
+            PlayDecision.START_OVER -> "Start over"
+            PlayDecision.NOT_PLAYABLE -> "No playable audio"
+        }
+    }
+
+    fun unplayableExplanation(): String = "This item has no playable audio."
+
+    fun seriesBadge(item: LibraryItem): String? {
+        val sequence = item.seriesSequence.trim()
+        if (sequence.isEmpty()) return null
+        return if (sequence.startsWith("#")) sequence else "#$sequence"
+    }
+
+    fun formatClock(seconds: Double): String {
+        var total = seconds
+        if (total < 0) total = 0.0
+        val whole = (total + 0.0000001).toInt()
+        val h = whole / 3600
+        val m = (whole % 3600) / 60
+        val s = whole % 60
+        return if (h > 0) {
+            "%d:%02d:%02d".format(h, m, s)
+        } else {
+            "%d:%02d".format(m, s)
+        }
+    }
+
+    fun formatSpan(seconds: Double): String {
+        val total = if (seconds > 0) seconds.toInt() else 0
+        val hours = total / 3600
+        val minutes = (total % 3600) / 60
+        return when {
+            hours > 0 -> "${hours}h ${minutes}m"
+            minutes > 0 -> "${minutes}m"
+            else -> "under a minute"
+        }
+    }
+
+    fun progressFraction(item: LibraryItem): Double {
+        val progress = item.progress ?: return 0.0
+        if (progress.isFinished) return 1.0
+        var fraction = progress.progress
+        if (fraction <= 0 && progress.duration > 0) {
+            fraction = progress.currentTime / progress.duration
+        }
+        return fraction.coerceIn(0.0, 1.0)
+    }
+
+    fun progressSummary(item: LibraryItem): String? {
+        val progress = item.progress ?: return null
+        if (progress.isFinished) return "Finished"
+        if (progress.currentTime <= 0) return null
+        val percent = (progressFraction(item) * 100 + 0.5).toInt()
+        val remaining = progress.duration - progress.currentTime
+        if (progress.duration <= 0 || remaining <= 0) {
+            return "$percent% complete"
+        }
+        return "$percent% · ${formatSpan(remaining)} left"
+    }
+
+    fun bookLibraries(list: LibraryList): List<Library> = list.libraries.filter { it.mediaType == "book" }
+
+    fun bookItems(items: List<LibraryItem>): List<LibraryItem> = items.filter { it.mediaType == "book" }
+
+    fun pickLibrary(libraries: List<Library>, savedId: String): Library? {
+        if (libraries.isEmpty()) return null
+        if (savedId.isNotEmpty()) {
+            libraries.firstOrNull { it.id == savedId }?.let { return it }
+        }
+        return libraries.first()
+    }
+
+    fun isPodcastLibrary(library: Library?): Boolean = library?.mediaType == "podcast"
+
+    fun searchMediaKey(library: Library?): String = if (isPodcastLibrary(library)) "podcast" else "book"
+
+    fun firstUnfinishedIn(episodes: List<LibraryItem>): LibraryItem? {
+        return episodes.firstOrNull { it.progress == null || !it.progress.isFinished } ?: episodes.firstOrNull()
+    }
+
+    fun firstUnfinishedEpisode(show: LibraryItem): LibraryItem? = firstUnfinishedIn(show.episodes)
+
+    fun episodeLabel(episode: LibraryItem): String {
+        val title = episode.title.trim()
+        if (title.isNotEmpty()) return title
+        if (episode.episodeIndex > 0) return "Episode ${episode.episodeIndex}"
+        return "Untitled episode"
+    }
+
+    fun episodeSubtitle(episode: LibraryItem): String {
+        progressSummary(episode)?.let { return it }
+        if (episode.duration > 0) return formatClock(episode.duration)
+        return ""
+    }
+
+    fun sortedEpisodes(episodes: List<LibraryItem>, newestFirst: Boolean): List<LibraryItem> {
+        val cmp = compareBy<LibraryItem> { it.publishedAt }
+            .thenBy { it.episodeIndex }
+            .thenBy { it.episodeId }
+        val sorted = episodes.sortedWith(cmp)
+        return if (newestFirst) sorted.reversed() else sorted
+    }
+
+    fun searchHits(json: String, mediaType: String): List<LibraryItem> = Models.searchHits(json, mediaType)
 }

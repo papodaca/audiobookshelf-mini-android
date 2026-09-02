@@ -17,4 +17,19 @@
     <string name="refuse">Refuse</string>
     <string name="sign_out_body">Sign out of this server?</string>
     <string name="sign_out_api_key_body">Sign out of this server? The API key stays valid until an admin revokes it.</string>
+    <string name="library">Library</string>
+    <string name="search">Search</string>
+    <string name="retry">Retry</string>
+    <string name="library_error">Couldn\'t load library</string>
+    <string name="detail_error">Couldn\'t load this book</string>
+    <string name="empty_continue">Nothing in progress in this library.</string>
+    <string name="empty_episodes">No recent episodes.</string>
+    <string name="empty_search">No matching titles.</string>
+    <string name="no_audio">No audio</string>
+    <string name="play">Play</string>
+    <string name="add_to_queue">Add to queue</string>
+    <string name="episodes">Episodes</string>
+    <string name="newest_first">Newest first</string>
+    <string name="oldest_first">Oldest first</string>
+    <string name="back">Back</string>
 </resources>

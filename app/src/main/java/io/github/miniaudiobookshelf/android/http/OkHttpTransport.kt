@@ -5,6 +5,7 @@ import io.github.miniaudiobookshelf.core.HttpResponse
 import io.github.miniaudiobookshelf.core.HttpTransport
 import io.github.miniaudiobookshelf.core.SettingsStore
 import io.github.miniaudiobookshelf.core.TlsHandshakeException
+import io.github.miniaudiobookshelf.core.TokenProvider
 import java.io.ByteArrayInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -41,6 +42,21 @@ class OkHttpTransport(
         recorder.reset(trustManagerWithPins(settings.getPinnedCertificates().values))
         lastPeerPem = ""
         client = buildClient()
+    }
+
+    fun imageClient(tokens: () -> TokenProvider?): OkHttpClient {
+        return client.newBuilder()
+            .addInterceptor { chain ->
+                val token = tokens()?.accessToken()
+                val request = chain.request()
+                val authed = if (token.isNullOrEmpty()) {
+                    request
+                } else {
+                    request.newBuilder().header("Authorization", "Bearer $token").build()
+                }
+                chain.proceed(authed)
+            }
+            .build()
     }
 
     override suspend fun send(

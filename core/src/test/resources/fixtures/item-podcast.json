@@ -1,0 +1,40 @@
+{
+  "id": "item-podcast",
+  "libraryId": "lib-pods",
+  "mediaType": "podcast",
+  "media": {
+    "id": "pod-1",
+    "metadata": {
+      "title": "A Podcast",
+      "author": "Host"
+    },
+    "numEpisodes": 2,
+    "duration": 4200.0,
+    "episodes": [
+      {
+        "id": "ep-1",
+        "libraryItemId": "item-podcast",
+        "title": "Episode One",
+        "duration": 1800.0,
+        "index": 1,
+        "publishedAt": 1700000000000
+      },
+      {
+        "id": "ep-2",
+        "libraryItemId": "item-podcast",
+        "title": "Episode Two",
+        "duration": 2400.0,
+        "index": 2,
+        "publishedAt": 1700003600000,
+        "userMediaProgress": {
+          "libraryItemId": "item-podcast",
+          "episodeId": "ep-2",
+          "duration": 2400,
+          "progress": 1,
+          "currentTime": 2400,
+          "isFinished": true
+        }
+      }
+    ]
+  }
+}

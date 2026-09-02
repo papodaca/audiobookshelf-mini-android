@@ -1,0 +1,17 @@
+{
+  "id": "item-no-audio",
+  "libraryId": "lib-books",
+  "mediaType": "book",
+  "media": {
+    "id": "book-no-audio",
+    "metadata": {
+      "title": "Text Only",
+      "authorName": "Silent Author"
+    },
+    "numTracks": 0,
+    "ebookFormat": "epub",
+    "duration": 0,
+    "tracks": [],
+    "chapters": []
+  }
+}

@@ -10,9 +10,51 @@ class ApiClient(
     val server: ServerUrl,
     private val transport: HttpTransport,
     private var tokens: TokenProvider? = null,
+    private val clock: Clock = SystemClock(),
 ) : AuthEndpoints {
     fun setTokenProvider(tokens: TokenProvider) {
         this.tokens = tokens
+    }
+
+    fun coverUrl(itemId: String): String {
+        val ts = clock.unixSeconds().toString()
+        return server.join("/api/items/${UriEscape.escape(itemId)}/cover?format=jpeg&ts=$ts")
+    }
+
+    suspend fun fetchLibraries(): LibraryList {
+        val body = send("GET", "/api/libraries", extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
+        return Models.parseLibraryList(body)
+    }
+
+    suspend fun fetchInProgress(libraryId: String, limit: Int = 25): ItemPage {
+        val body = send("GET", Models.inProgressUrlPath(libraryId, limit), extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
+        val page = Models.parseItemPage(body)
+        return page.copy(results = ViewLogic.bookItems(page.results))
+    }
+
+    suspend fun fetchRecentEpisodes(libraryId: String, limit: Int = 50): EpisodePage {
+        val body = send(
+            "GET",
+            Models.recentEpisodesUrlPath(libraryId, page = 0, limit = limit),
+            extraHeaders = emptyMap(),
+            jsonBody = null,
+            attachAuth = true,
+        )
+        return Models.parseEpisodePage(body)
+    }
+
+    suspend fun fetchItem(itemId: String, episodeId: String? = null): LibraryItem {
+        val body = send("GET", Models.itemUrlPath(itemId, episodeId), extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
+        return Models.parseItem(body)
+    }
+
+    suspend fun fetchLibraryItems(libraryId: String, page: Int = 0, limit: Int = 50): ItemPage {
+        val body = send("GET", Models.libraryItemsUrlPath(libraryId, page, limit), extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
+        return Models.parseItemPage(body)
+    }
+
+    suspend fun search(libraryId: String, query: String): String {
+        return send("GET", Models.searchUrlPath(libraryId, query), extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
     }
 
     suspend fun probeStatus(): ServerStatus {

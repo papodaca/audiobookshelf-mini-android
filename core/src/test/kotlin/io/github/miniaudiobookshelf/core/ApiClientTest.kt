@@ -148,4 +148,62 @@ class ApiClientTest {
         assertFalse(line.contains("session=abc"))
         assertTrue(line.contains("[redacted]"))
     }
+
+    @Test
+    fun inProgressUrlEncodesFilterExactly() {
+        val path = Models.inProgressUrlPath("lib books/1", 25)
+        assertTrue(path.contains("filter=progress.aW4tcHJvZ3Jlc3M%3D"))
+        assertTrue(path.contains("/api/libraries/lib%20books%2F1/items"))
+        assertTrue(path.contains("sort=progress"))
+        assertTrue(path.contains("desc=1"))
+        assertTrue(path.contains("limit=25"))
+        assertTrue(path.contains("minified=1"))
+    }
+
+    @Test
+    fun itemAndSearchAndRecentPathsEncode() {
+        assertEquals(
+            "/api/items/item-1?expanded=1&include=progress",
+            Models.itemUrlPath("item-1"),
+        )
+        val episode = Models.itemUrlPath("item pod", "ep 1")
+        assertTrue(episode.contains("/api/items/item%20pod?expanded=1&include=progress"))
+        assertTrue(episode.contains("episode=ep%201"))
+        val recent = Models.recentEpisodesUrlPath("lib pods/1", 0, 50)
+        assertTrue(recent.contains("/api/libraries/lib%20pods%2F1/recent-episodes"))
+        assertTrue(recent.contains("limit=50"))
+        assertTrue(recent.contains("page=0"))
+        val search = Models.searchUrlPath("lib-books", "dune & co")
+        assertTrue(search.contains("/api/libraries/lib-books/search?q="))
+        assertFalse(search.contains("token="))
+    }
+
+    @Test
+    fun coverUrlIsJpegCacheBusterWithoutToken() {
+        val transport = FakeTransport()
+        val clock = FakeClock(1_700_000_000L)
+        val client = ApiClient(
+            ServerUrl.parse("https://abs.example.com"),
+            transport,
+            FakeTokenProvider("secret-access-token"),
+            clock,
+        )
+        val url = client.coverUrl("item 1")
+        assertTrue(url.contains("/api/items/item%201/cover"))
+        assertTrue(url.contains("format=jpeg"))
+        assertTrue(url.contains("ts=1700000000"))
+        assertFalse(url.contains("token"))
+        assertFalse(url.contains("secret-access-token"))
+    }
+
+    @Test
+    fun fetchLibrariesSendsBearerHeader() = runTest {
+        val transport = FakeTransport()
+        transport.enqueue(200, """{"libraries":[{"id":"lib-books","name":"Books","mediaType":"book"}]}""")
+        val client = clientWith(transport, FakeTokenProvider("secret-access-token"))
+        val list = client.fetchLibraries()
+        assertEquals("lib-books", list.libraries.single().id)
+        assertEquals("Bearer secret-access-token", transport.requests.single().headers["Authorization"])
+        assertFalse(transport.requests.single().uri.contains("token"))
+    }
 }

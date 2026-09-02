@@ -1,0 +1,62 @@
+{
+  "id": "item-single",
+  "ino": "123",
+  "libraryId": "lib-books",
+  "folderId": "folder-1",
+  "path": "/audiobooks/single",
+  "relPath": "single",
+  "mediaType": "book",
+  "media": {
+    "id": "book-single",
+    "metadata": {
+      "title": "The Single File Book",
+      "titleIgnorePrefix": "Single File Book",
+      "subtitle": null,
+      "authors": [{ "id": "au-1", "name": "Ada Author" }],
+      "narrators": ["Ned Narrator"],
+      "authorName": "Ada Author",
+      "narratorName": "Ned Narrator",
+      "series": [],
+      "genres": ["Fiction"],
+      "publishedYear": "2020",
+      "publisher": "Example Press",
+      "description": "A single-file audiobook.",
+      "isbn": null,
+      "asin": "B00SINGLE",
+      "language": "English",
+      "explicit": false,
+      "abridged": false
+    },
+    "coverPath": "/audiobooks/single/cover.jpg",
+    "tags": ["favorite"],
+    "numTracks": 1,
+    "numAudioFiles": 1,
+    "numChapters": 2,
+    "numFiles": 2,
+    "duration": 3600.0,
+    "size": 12345678,
+    "tracks": [
+      {
+        "index": 1,
+        "startOffset": 0,
+        "duration": 3600.0,
+        "title": "book.m4b",
+        "contentUrl": "/api/items/item-single/file/123",
+        "mimeType": "audio/mp4",
+        "codec": "aac",
+        "metadata": { "filename": "book.m4b", "ext": ".m4b", "size": 12345678 }
+      }
+    ],
+    "chapters": [
+      { "id": 0, "start": 0, "end": 1800, "title": "Chapter One" },
+      { "id": 1, "start": 1800, "end": 3600, "title": "Chapter Two" }
+    ]
+  },
+  "mtimeMs": 1700000000000,
+  "ctimeMs": 1700000000000,
+  "birthtimeMs": 1700000000000,
+  "addedAt": 1700000000000,
+  "updatedAt": 1700000000000,
+  "isLibraryItem": true,
+  "unexpectedFutureField": "clients must ignore this"
+}

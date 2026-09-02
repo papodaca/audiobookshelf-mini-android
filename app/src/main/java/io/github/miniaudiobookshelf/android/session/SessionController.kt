@@ -1,5 +1,6 @@
 package io.github.miniaudiobookshelf.android.session
 
+import io.github.miniaudiobookshelf.android.browse.BrowseController
 import io.github.miniaudiobookshelf.android.http.OkHttpTransport
 import io.github.miniaudiobookshelf.core.ApiClient
 import io.github.miniaudiobookshelf.core.ApiError
@@ -9,6 +10,9 @@ import io.github.miniaudiobookshelf.core.ConnectDecision
 import io.github.miniaudiobookshelf.core.ConnectFailure
 import io.github.miniaudiobookshelf.core.CredentialManager
 import io.github.miniaudiobookshelf.core.CredentialMode
+import io.github.miniaudiobookshelf.core.LibraryItem
+import io.github.miniaudiobookshelf.core.PlaybackQueue
+import io.github.miniaudiobookshelf.core.PlaybackStarter
 import io.github.miniaudiobookshelf.core.ServerUrl
 import io.github.miniaudiobookshelf.core.SettingsStore
 import io.github.miniaudiobookshelf.core.TokenStore
@@ -36,6 +40,13 @@ class SessionController(
     private var api: ApiClient? = null
     private var credentials: CredentialManager? = null
     private var server: ServerUrl? = null
+    private var browse: BrowseController? = null
+    private val queue = PlaybackQueue()
+    private val playback = object : PlaybackStarter {
+        override fun play(item: LibraryItem, episodeId: String?, startOver: Boolean) {}
+    }
+
+    fun coverOkHttpClient(): okhttp3.OkHttpClient = transport.imageClient { credentials }
 
     private val _state = MutableStateFlow<SessionState>(SessionState.Loading)
     val state: StateFlow<SessionState> = _state
@@ -113,6 +124,8 @@ class SessionController(
             } catch (_: Exception) {
             }
             val url = server?.normalized ?: settings.getServerUrl()
+            queue.clear()
+            browse = null
             _state.value = SessionState.Connect(ConnectUi(url = url))
         }
     }
@@ -221,7 +234,7 @@ class SessionController(
     private fun rebuild(parsed: ServerUrl) {
         settings.setServerUrl(parsed.normalized)
         transport.rebuild()
-        val client = ApiClient(parsed, transport)
+        val client = ApiClient(parsed, transport, clock = clock)
         val mgr = CredentialManager(client, tokenStore, settings, clock, parsed.origin)
         client.setTokenProvider(mgr)
         api = client
@@ -236,10 +249,22 @@ class SessionController(
         } else {
             null
         }
+        val client = api ?: return
+        val controller = BrowseController(
+            api = client,
+            settings = settings,
+            queue = queue,
+            playback = playback,
+            scope = scope,
+            onSessionExpired = { confirmSignOut() },
+        )
+        browse = controller
+        controller.start()
         _state.value = SessionState.SignedIn(
             origin = server?.origin.orEmpty(),
             apiKey = mgr.mode == CredentialMode.API_KEY,
             toast = toast,
+            browse = controller,
         )
     }
 
@@ -286,7 +311,12 @@ class SessionController(
 sealed class SessionState {
     data object Loading : SessionState()
     data class Connect(val ui: ConnectUi) : SessionState()
-    data class SignedIn(val origin: String, val apiKey: Boolean, val toast: String? = null) : SessionState()
+    data class SignedIn(
+        val origin: String,
+        val apiKey: Boolean,
+        val toast: String? = null,
+        val browse: BrowseController,
+    ) : SessionState()
 }
 
 data class ConnectUi(

@@ -1,0 +1,60 @@
+{
+  "results": [
+    {
+      "id": "item-single",
+      "libraryId": "lib-books",
+      "mediaType": "book",
+      "media": {
+        "id": "book-single",
+        "metadata": {
+          "title": "The Single File Book",
+          "titleIgnorePrefix": "Single File Book",
+          "subtitle": null,
+          "authorName": "Ada Author",
+          "narratorName": "Ned Narrator",
+          "seriesName": "Themis Files",
+          "series": [
+            {
+              "id": "ser-themis",
+              "name": "Themis Files",
+              "sequence": "2"
+            }
+          ]
+        },
+        "coverPath": "/audiobooks/single/cover.jpg",
+        "tags": [],
+        "numTracks": 1,
+        "numAudioFiles": 1,
+        "numChapters": 2,
+        "duration": 3600.0,
+        "size": 12345678
+      }
+    },
+    {
+      "id": "item-ebook",
+      "libraryId": "lib-books",
+      "mediaType": "book",
+      "media": {
+        "id": "book-ebook",
+        "metadata": {
+          "title": "Ebook Only",
+          "authorName": "No Audio"
+        },
+        "numTracks": 0,
+        "numAudioFiles": 0,
+        "numChapters": 0,
+        "ebookFormat": "epub",
+        "duration": 0
+      }
+    }
+  ],
+  "total": 2,
+  "limit": 50,
+  "page": 0,
+  "sortBy": "media.metadata.title",
+  "sortDesc": false,
+  "filterBy": "",
+  "mediaType": "book",
+  "minified": true,
+  "collapseseries": false
+}

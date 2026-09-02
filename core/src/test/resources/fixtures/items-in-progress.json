@@ -1,0 +1,37 @@
+{
+  "results": [
+    {
+      "id": "item-in-progress",
+      "libraryId": "lib-books",
+      "mediaType": "book",
+      "progressLastUpdate": 1700000000000,
+      "media": {
+        "id": "book-in-progress",
+        "metadata": {
+          "title": "Only Human",
+          "authorName": "Sylvain Neuvel"
+        },
+        "numTracks": 1,
+        "numAudioFiles": 1,
+        "duration": 36000.0
+      }
+    },
+    {
+      "id": "item-podcast",
+      "libraryId": "lib-pods",
+      "mediaType": "podcast",
+      "progressLastUpdate": 1690000000000,
+      "recentEpisode": {
+        "id": "ep-1",
+        "title": "Episode One"
+      },
+      "media": {
+        "metadata": {
+          "title": "A Podcast",
+          "authorName": "Host"
+        },
+        "numTracks": 1
+      }
+    }
+  ]
+}

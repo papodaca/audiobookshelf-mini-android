@@ -26,6 +26,7 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
     private var deviceId: String = ""
     private var pins: Map<String, String> = emptyMap()
     private var httpAck: Set<String> = emptySet()
+    private var libraryId: String = ""
 
     init {
         val prefs = runBlocking { dataStore.data.first() }
@@ -33,6 +34,7 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         deviceId = prefs[DEVICE_ID].orEmpty()
         httpAck = prefs[HTTP_ACK].orEmpty()
         pins = decodePins(prefs[PINS].orEmpty())
+        libraryId = prefs[LIBRARY_ID].orEmpty()
     }
 
     override fun getServerUrl(): String = synchronized(lock) { serverUrl }
@@ -71,6 +73,13 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         persist { it[HTTP_ACK] = next }
     }
 
+    override fun getLibraryId(): String = synchronized(lock) { libraryId }
+
+    override fun setLibraryId(value: String) {
+        synchronized(lock) { libraryId = value }
+        persist { it[LIBRARY_ID] = value }
+    }
+
     private fun persist(mutate: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         scope.launch {
             dataStore.edit(mutate)
@@ -82,6 +91,7 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         private val DEVICE_ID = stringPreferencesKey("device_id")
         private val HTTP_ACK = stringSetPreferencesKey("http_ack_origins")
         private val PINS = stringPreferencesKey("pinned_certificates")
+        private val LIBRARY_ID = stringPreferencesKey("library_id")
 
         private fun encodePins(pins: Map<String, String>): String {
             val obj = JSONObject()

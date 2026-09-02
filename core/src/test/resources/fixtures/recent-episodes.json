@@ -1,0 +1,20 @@
+{
+  "episodes": [
+    {
+      "id": "ep-1",
+      "libraryItemId": "item-podcast",
+      "libraryId": "lib-pods",
+      "title": "Episode One",
+      "duration": 1800.0,
+      "publishedAt": 1700000000000,
+      "podcast": {
+        "libraryItemId": "item-podcast",
+        "metadata": {
+          "title": "A Podcast",
+          "author": "Host"
+        }
+      }
+    }
+  ],
+  "total": 1
+}

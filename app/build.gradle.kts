@@ -50,4 +50,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
     implementation(libs.okhttp.tls)
+    implementation(libs.coil.compose)
 }
