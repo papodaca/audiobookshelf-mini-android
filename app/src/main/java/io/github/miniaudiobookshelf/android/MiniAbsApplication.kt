@@ -73,7 +73,13 @@ class MiniAbsApplication : Application() {
         session.onSignOutDownloads = { delete ->
             if (delete) downloadController.deleteAll()
         }
-        session.onSignedIn = { localFlush.flushAsync() }
+        session.onSignedIn = {
+            localFlush.flushAsync()
+            val api = session.apiClient()
+            if (api != null) {
+                downloadController.backfillCovers(session.coverOkHttpClient()) { api.coverUrl(it) }
+            }
+        }
         Coil.setImageLoader(
             ImageLoader.Builder(this)
                 .okHttpClient { session.coverOkHttpClient() }

@@ -234,6 +234,10 @@ fun SignedInScreen(
                 DownloadsScreen(
                     records = downloadRows,
                     downloads = app.downloadController,
+                    coverUrl = { row ->
+                        app.downloadController.coverUri(row.itemId, row.episodeId)
+                            .ifEmpty { browse.coverUrl(row.itemId) }
+                    },
                     onOpen = { row ->
                         showDownloads = false
                         browse.openDetail(row.toLibraryItem(), row.episodeId.ifEmpty { null })

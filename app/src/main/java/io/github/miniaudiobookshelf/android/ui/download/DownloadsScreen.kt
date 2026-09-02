@@ -8,10 +8,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,8 +25,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import io.github.miniaudiobookshelf.android.R
 import io.github.miniaudiobookshelf.android.download.DownloadController
 import io.github.miniaudiobookshelf.core.DownloadRecord
@@ -34,6 +43,7 @@ import io.github.miniaudiobookshelf.core.LibraryItem
 fun DownloadsScreen(
     records: List<DownloadRecord>,
     downloads: DownloadController,
+    coverUrl: (DownloadRecord) -> String,
     onOpen: (DownloadRecord) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -80,7 +90,12 @@ fun DownloadsScreen(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
             ) {
                 items(records, key = { it.itemId + ":" + it.episodeId }) { row ->
-                    DownloadRow(row = row, downloads = downloads, onOpen = onOpen)
+                    DownloadRow(
+                        row = row,
+                        coverUrl = coverUrl(row),
+                        downloads = downloads,
+                        onOpen = onOpen,
+                    )
                 }
             }
         }
@@ -90,51 +105,91 @@ fun DownloadsScreen(
 @Composable
 private fun DownloadRow(
     row: DownloadRecord,
+    coverUrl: String,
     downloads: DownloadController,
     onOpen: (DownloadRecord) -> Unit,
 ) {
-    Column(
+    val context = LocalContext.current
+    val title = row.title.ifEmpty { row.itemId }
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpen(row) }
             .padding(vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Text(row.title.ifEmpty { row.itemId }, style = MaterialTheme.typography.titleMedium)
-        if (row.author.isNotEmpty()) {
-            Text(row.author, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (coverUrl.isNotEmpty()) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(coverUrl)
+                    .crossfade(true)
+                    .size(160)
+                    .build(),
+                contentDescription = title,
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {}
         }
-        Text(statusLabel(row), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (row.status == DownloadStatus.RUNNING || row.status == DownloadStatus.QUEUED) {
-            val progress = if (row.bytesTotal > 0) row.bytesDownloaded.toFloat() / row.bytesTotal.toFloat() else 0f
-            LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            when (row.status) {
-                DownloadStatus.QUEUED, DownloadStatus.RUNNING -> {
-                    TextButton(onClick = { downloads.pause(row.itemId, row.episodeId) }) {
-                        Text(stringResource(R.string.pause))
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (row.author.isNotEmpty()) {
+                Text(
+                    text = row.author,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(statusLabel(row), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (row.status == DownloadStatus.RUNNING || row.status == DownloadStatus.QUEUED) {
+                val progress = if (row.bytesTotal > 0) row.bytesDownloaded.toFloat() / row.bytesTotal.toFloat() else 0f
+                LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (row.status) {
+                    DownloadStatus.QUEUED, DownloadStatus.RUNNING -> {
+                        TextButton(onClick = { downloads.pause(row.itemId, row.episodeId) }) {
+                            Text(stringResource(R.string.pause))
+                        }
+                        TextButton(onClick = { downloads.cancel(row.itemId, row.episodeId) }) {
+                            Text(stringResource(R.string.cancel))
+                        }
                     }
-                    TextButton(onClick = { downloads.cancel(row.itemId, row.episodeId) }) {
-                        Text(stringResource(R.string.cancel))
+                    DownloadStatus.PAUSED, DownloadStatus.FAILED -> {
+                        TextButton(onClick = { downloads.retry(row.itemId, row.episodeId) }) {
+                            Text(stringResource(R.string.retry))
+                        }
+                        TextButton(onClick = { downloads.delete(row.itemId, row.episodeId) }) {
+                            Text(stringResource(R.string.delete_download))
+                        }
                     }
-                }
-                DownloadStatus.PAUSED, DownloadStatus.FAILED -> {
-                    TextButton(onClick = { downloads.retry(row.itemId, row.episodeId) }) {
-                        Text(stringResource(R.string.retry))
-                    }
-                    TextButton(onClick = { downloads.delete(row.itemId, row.episodeId) }) {
-                        Text(stringResource(R.string.delete_download))
-                    }
-                }
-                DownloadStatus.COMPLETE -> {
-                    TextButton(onClick = { downloads.delete(row.itemId, row.episodeId) }) {
-                        Text(stringResource(R.string.delete_download))
+                    DownloadStatus.COMPLETE -> {
+                        TextButton(onClick = { downloads.delete(row.itemId, row.episodeId) }) {
+                            Text(stringResource(R.string.delete_download))
+                        }
                     }
                 }
             }
+            Text(byteLabel(row), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text(byteLabel(row), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

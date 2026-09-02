@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 
 class DownloadController(
     private val context: Context,
@@ -74,6 +75,22 @@ class DownloadController(
 
     fun deleteAll() {
         scope.launch(Dispatchers.IO) { repository.deleteAll() }
+    }
+
+    fun coverUri(itemId: String, episodeId: String): String = repository.coverUri(itemId, episodeId)
+
+    fun backfillCovers(client: OkHttpClient, urlFor: (String) -> String) {
+        scope.launch(Dispatchers.IO) {
+            for (row in repository.records.value) {
+                val existing = repository.coverFile(row.itemId, row.episodeId)
+                if (existing.isFile && existing.length() > 0L) continue
+                val url = urlFor(row.itemId)
+                if (url.isEmpty()) continue
+                if (repository.fetchCover(client, url, row.itemId, row.episodeId)) {
+                    repository.upsert(row.copy(updatedAt = System.currentTimeMillis()))
+                }
+            }
+        }
     }
 
     fun setAllowMetered(value: Boolean) {

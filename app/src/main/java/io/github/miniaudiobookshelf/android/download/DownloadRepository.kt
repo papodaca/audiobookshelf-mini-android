@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 class DownloadRepository(
     private val context: Context,
@@ -50,6 +52,33 @@ class DownloadRepository(
 
     fun coverFile(itemId: String, episodeId: String): File {
         return File(dirFor(itemId, episodeId), COVER_NAME)
+    }
+
+    fun coverUri(itemId: String, episodeId: String): String {
+        val file = coverFile(itemId, episodeId)
+        if (!file.isFile || file.length() <= 0L) return ""
+        return Uri.fromFile(file).toString()
+    }
+
+    fun fetchCover(client: OkHttpClient, url: String, itemId: String, episodeId: String): Boolean {
+        if (url.isEmpty()) return false
+        val dest = coverFile(itemId, episodeId)
+        if (dest.isFile && dest.length() > 0L) return true
+        dest.parentFile?.mkdirs()
+        val request = Request.Builder().url(url).get().build()
+        return try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return false
+                val bytes = response.body?.bytes() ?: return false
+                if (bytes.isEmpty()) return false
+                val part = File(dest.absolutePath + ".part")
+                part.writeBytes(bytes)
+                if (dest.exists()) dest.delete()
+                part.renameTo(dest) && dest.isFile && dest.length() > 0L
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     suspend fun upsert(record: DownloadRecord) {

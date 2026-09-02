@@ -76,6 +76,7 @@ class DownloadWorker(
         }
         val dir = repo.dirFor(itemId, episodeId)
         dir.mkdirs()
+        repo.fetchCover(app.session.coverOkHttpClient(), api.coverUrl(itemId), itemId, episodeId)
         val total = tracks.sumOf { it.byteSize.coerceAtLeast(0L) }
         var downloaded = 0L
         val client = app.session.downloadOkHttpClient()
@@ -173,7 +174,7 @@ class DownloadWorker(
                 "",
             )
         }
-        downloadCover(app, api, token, itemId, episodeId)
+        repo.fetchCover(app.session.coverOkHttpClient(), api.coverUrl(itemId), itemId, episodeId)
         val sidecar = DownloadSidecar(
             itemId = itemId,
             episodeId = episodeId,
@@ -216,21 +217,6 @@ class DownloadWorker(
             sidecarFile.absolutePath,
         )
         return Result.success()
-    }
-
-    private fun downloadCover(app: MiniAbsApplication, api: ApiClient, token: String?, itemId: String, episodeId: String) {
-        val dest = app.downloads.coverFile(itemId, episodeId)
-        val url = api.coverUrl(itemId)
-        val request = Request.Builder().url(url).get().apply {
-            if (!token.isNullOrEmpty()) header("Authorization", "Bearer $token")
-        }.build()
-        try {
-            app.session.downloadOkHttpClient().newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return
-                response.body?.bytes()?.let { dest.writeBytes(it) }
-            }
-        } catch (_: Exception) {
-        }
     }
 
     private suspend fun upsert(
