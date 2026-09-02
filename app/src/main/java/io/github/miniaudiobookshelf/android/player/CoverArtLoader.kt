@@ -2,7 +2,9 @@ package io.github.miniaudiobookshelf.android.player
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import java.io.ByteArrayOutputStream
+import java.io.File
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -11,12 +13,19 @@ class CoverArtLoader(
 ) {
     fun load(url: String, maxPx: Int): ByteArray? {
         if (url.isEmpty()) return null
-        val request = Request.Builder().url(url).build()
-        clientProvider().newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return null
-            val bytes = response.body?.bytes() ?: return null
-            return downsample(bytes, maxPx.coerceAtLeast(64))
+        val bytes = if (url.startsWith("file:", ignoreCase = true)) {
+            val path = Uri.parse(url).path ?: return null
+            val file = File(path)
+            if (!file.isFile) return null
+            file.readBytes()
+        } else {
+            val request = Request.Builder().url(url).build()
+            clientProvider().newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return null
+                response.body?.bytes() ?: return null
+            }
         }
+        return downsample(bytes, maxPx.coerceAtLeast(64))
     }
 
     private fun downsample(bytes: ByteArray, maxPx: Int): ByteArray {

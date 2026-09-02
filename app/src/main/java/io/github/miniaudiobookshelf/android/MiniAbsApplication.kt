@@ -82,7 +82,17 @@ class MiniAbsApplication : Application() {
         )
         session.start()
         watchQueueAdvance()
+        watchDownloads()
         appScope.launch(Dispatchers.IO) { downloads.hydrate() }
+    }
+
+    private fun watchDownloads() {
+        appScope.launch {
+            downloads.records
+                .map { rows -> rows.filter { it.complete }.map { it.itemId to it.episodeId } }
+                .distinctUntilChanged()
+                .collect { playback.notifyLibraryChanged() }
+        }
     }
 
     private fun watchQueueAdvance() {

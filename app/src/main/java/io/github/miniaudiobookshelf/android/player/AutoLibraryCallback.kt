@@ -88,9 +88,14 @@ class AutoLibraryCallback(
         params: LibraryParams?,
     ): ListenableFuture<LibraryResult<MediaItem>> {
         service.noteRootHints(params)
-        val extras = Bundle()
+        val extras = Bundle(params?.extras ?: Bundle.EMPTY)
         extras.putBoolean(SEARCH_SUPPORTED, true)
-        val rootParams = params ?: LibraryParams.Builder().setExtras(extras).build()
+        val rootParams = LibraryParams.Builder()
+            .setExtras(extras)
+            .setOffline(params?.isOffline == true)
+            .setRecent(params?.isRecent == true)
+            .setSuggested(params?.isSuggested == true)
+            .build()
         return Futures.immediateFuture(
             LibraryResult.ofItem(toMediaItem(AutoBrowseTree.rootItem()), rootParams),
         )

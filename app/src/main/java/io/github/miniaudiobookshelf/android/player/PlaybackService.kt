@@ -31,7 +31,6 @@ import io.github.miniaudiobookshelf.core.AutoControllerAllowlist
 import io.github.miniaudiobookshelf.core.AutoMediaId
 import io.github.miniaudiobookshelf.core.AutoNode
 import io.github.miniaudiobookshelf.core.DownloadCatalog
-import io.github.miniaudiobookshelf.core.EmptyDownloadCatalog
 import io.github.miniaudiobookshelf.core.Library
 import io.github.miniaudiobookshelf.core.SettingsStore
 import io.github.miniaudiobookshelf.core.SystemClock
@@ -157,7 +156,7 @@ class PlaybackService : MediaLibraryService() {
         super.onDestroy()
     }
 
-    fun isSignedIn(): Boolean = app().session.apiClient() != null
+    fun isSignedIn(): Boolean = app().session.isSignedIn()
 
     fun settings(): SettingsStore = app().session.settingsStore()
 
@@ -228,16 +227,18 @@ class PlaybackService : MediaLibraryService() {
     }
 
     suspend fun playFromSearch(query: String) {
+        if (!isSignedIn()) return
         val api = app().session.apiClient() ?: return
         val hit = AutoBrowseTree.pickSearchPlayable(searchHits(query)) ?: return
-        val library = selectedLibrary()
-        val episodeId = if (ViewLogic.isPodcastLibrary(library) && hit.episodeId.isEmpty()) {
+        var episodeId = hit.episodeId.ifEmpty { null }
+        var decisionItem = hit
+        if (episodeId == null && (hit.mediaType == "podcast" || hit.hasEpisodes || hit.numEpisodes > 0)) {
             val expanded = withContext(Dispatchers.IO) { api.fetchItem(hit.id) }
-            ViewLogic.firstUnfinishedEpisode(expanded)?.episodeId
-        } else {
-            hit.episodeId.ifEmpty { null }
+            val episode = ViewLogic.firstUnfinishedEpisode(expanded)
+            episodeId = episode?.episodeId
+            if (episode != null) decisionItem = episode
         }
-        val start = if (ViewLogic.playDecision(hit) == ViewLogic.PlayDecision.START_OVER) 0.0 else -1.0
+        val start = if (ViewLogic.playDecision(decisionItem) == ViewLogic.PlayDecision.START_OVER) 0.0 else -1.0
         ensureEngine()?.playItem(hit.id, episodeId, start)
     }
 

@@ -110,6 +110,15 @@ class AutoBrowseTreeTest {
         assertEquals("e", AutoBrowseTree.pickSearchPlayable(listOf(ebook))!!.id)
         assertNull(AutoBrowseTree.pickSearchPlayable(emptyList()))
     }
+
+    @Test
+    fun pickSearchPlayableTakesPodcastShowWithoutEpisodesLoaded() {
+        val show = LibraryItem(id = "show", title = "The Show", mediaType = "podcast", numEpisodes = 12)
+        val picked = AutoBrowseTree.pickSearchPlayable(listOf(show))!!
+        assertEquals("show", picked.id)
+        assertTrue(picked.episodeId.isEmpty())
+        assertTrue(picked.numEpisodes > 0)
+    }
 }
 
 class AutoControllerAllowlistTest {
