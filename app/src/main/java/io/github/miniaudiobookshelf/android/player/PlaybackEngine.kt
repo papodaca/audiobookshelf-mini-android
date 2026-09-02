@@ -2,7 +2,6 @@
 
 package io.github.miniaudiobookshelf.android.player
 
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -19,12 +18,21 @@ import io.github.miniaudiobookshelf.core.ApiClient
 import io.github.miniaudiobookshelf.core.ApiError
 import io.github.miniaudiobookshelf.core.AudioTrack
 import io.github.miniaudiobookshelf.core.BookTimeline
+import io.github.miniaudiobookshelf.core.DownloadCatalog
+import io.github.miniaudiobookshelf.core.DownloadPolicy
+import io.github.miniaudiobookshelf.core.EmptyDownloadCatalog
+import io.github.miniaudiobookshelf.core.LocalDeviceInfo
+import io.github.miniaudiobookshelf.core.LocalMediaMetadata
+import io.github.miniaudiobookshelf.core.LocalPlaybackSession
 import io.github.miniaudiobookshelf.core.PlaybackError
-import io.github.miniaudiobookshelf.core.PlaySession
 import io.github.miniaudiobookshelf.core.SettingsStore
 import io.github.miniaudiobookshelf.core.StallDecision
 import io.github.miniaudiobookshelf.core.StallPolicy
+import io.github.miniaudiobookshelf.core.TrackUriResolver
 import io.github.miniaudiobookshelf.core.ViewLogic
+import io.github.miniaudiobookshelf.android.download.LocalSessionFlush
+import io.github.miniaudiobookshelf.android.download.LocalSessionStore
+import io.github.miniaudiobookshelf.android.download.ServerReachability
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,13 +52,20 @@ class PlaybackEngine(
     private val scope: CoroutineScope,
     private val stateHolder: MutableStateFlow<PlayerState>,
     private val mainHandler: Handler = Handler(Looper.getMainLooper()),
+    private val catalog: DownloadCatalog = EmptyDownloadCatalog,
+    private val reachability: ServerReachability? = null,
+    private val localSessions: LocalSessionStore? = null,
+    private val localFlush: LocalSessionFlush? = null,
+    private val signedIn: () -> Boolean = { true },
 ) {
     val state: StateFlow<PlayerState> = stateHolder
     var lastServerCurrentTime: Double = 0.0
         private set
     val currentSessionId: String get() = sessionId.orEmpty()
+    val usesLiveSync: Boolean get() = liveSession && !sessionId.isNullOrEmpty()
 
     private var sessionId: String? = null
+    private var liveSession = true
     private var tracks: List<AudioTrack> = emptyList()
     private var transitionInFlight = false
     private var pendingSeek = -1.0
@@ -217,7 +232,45 @@ class PlaybackEngine(
         stallAutoRetry = false
         transitionInFlight = true
         try {
-            openSession(itemId, episodeId, startOverride)
+            if (!signedIn()) {
+                hopWait {
+                    stateHolder.update {
+                        it.copy(
+                            statusMessage = "Sign in to play.",
+                            retryAvailable = false,
+                            pipeline = PipelineState.STOPPED,
+                            intended = IntendedState.STOPPED,
+                        )
+                    }
+                }
+                return
+            }
+            val ep = episodeId.orEmpty()
+            val complete = catalog.isComplete(itemId, ep)
+            if (!complete) {
+                val sidecar = catalog.sidecar(itemId, ep)
+                val row = catalog.record(itemId, ep)
+                if (row?.status == io.github.miniaudiobookshelf.core.DownloadStatus.COMPLETE || sidecar != null) {
+                    catalog.markFailed(itemId, ep, "Downloaded files are incomplete or the size changed")
+                }
+            }
+            val reachable = reachability?.isReachable() ?: true
+            when (DownloadPolicy.playMode(complete, reachable)) {
+                DownloadPolicy.PlayMode.LIVE_LOCAL, DownloadPolicy.PlayMode.LIVE_STREAM ->
+                    openSession(itemId, episodeId, startOverride, useLocal = complete)
+                DownloadPolicy.PlayMode.OFFLINE_LOCAL ->
+                    openOffline(itemId, episodeId, startOverride)
+                DownloadPolicy.PlayMode.CANNOT_PLAY -> hopWait {
+                    stateHolder.update {
+                        it.copy(
+                            statusMessage = "This title isn't downloaded and the server could not be reached.",
+                            retryAvailable = true,
+                            pipeline = PipelineState.ERROR,
+                            intended = IntendedState.STOPPED,
+                        )
+                    }
+                }
+            }
         } catch (e: PlaybackError.TranscodeOnly) {
             hopWait {
                 stateHolder.update {
@@ -251,7 +304,7 @@ class PlaybackEngine(
         }
     }
 
-    private suspend fun openSession(itemId: String, episodeId: String?, startOverride: Double) {
+    private suspend fun openSession(itemId: String, episodeId: String?, startOverride: Double, useLocal: Boolean) {
         closeSession()
         val session = withContext(Dispatchers.IO) {
             api.play(itemId, deviceId, episodeId)
@@ -267,27 +320,116 @@ class PlaybackEngine(
             throw PlaybackError.TranscodeOnly()
         }
         hopWait {
-            attachSession(itemId, episodeId, session, startOverride)
+            liveSession = true
+            val localUris = if (useLocal) catalog.localUris(itemId, episodeId.orEmpty()) else emptyList()
+            val streamUris = session.tracks.map { api.streamUrl(session.id, it.index) }
+            val uris = TrackUriResolver.playlistUris(useLocal, localUris, streamUris)
+            attachPlaylist(itemId, episodeId, session.title, session.author, session.tracks, session.chapters, session.currentTime, startOverride, session.id, uris, coverUrl(itemId, episodeId.orEmpty()))
             settings.setLastItemId(itemId)
             settings.setLastEpisodeId(episodeId.orEmpty())
         }
     }
 
-    private fun attachSession(itemId: String, episodeId: String?, session: PlaySession, startOverride: Double) {
-        sessionId = session.id
-        lastServerCurrentTime = session.currentTime
-        tracks = session.tracks
-        val timeline = BookTimeline(session.tracks, session.chapters)
+    private suspend fun openOffline(itemId: String, episodeId: String?, startOverride: Double) {
+        closeSession()
+        val sidecar = catalog.sidecar(itemId, episodeId.orEmpty())
+        val uris = catalog.localUris(itemId, episodeId.orEmpty())
+        if (sidecar == null || uris.isEmpty()) {
+            hopWait {
+                stateHolder.update {
+                    it.copy(
+                        statusMessage = "This download is incomplete.",
+                        retryAvailable = false,
+                        pipeline = PipelineState.ERROR,
+                        intended = IntendedState.STOPPED,
+                    )
+                }
+            }
+            return
+        }
+        val stored = localSessions?.get(itemId, episodeId.orEmpty())
+        val start = when {
+            startOverride >= 0 -> startOverride
+            stored != null -> stored.currentTime
+            else -> 0.0
+        }
+        val now = System.currentTimeMillis()
+        val local = LocalPlaybackSession(
+            id = stored?.id ?: LocalPlaybackSession.newId(),
+            libraryItemId = itemId,
+            episodeId = episodeId?.ifEmpty { null },
+            mediaType = if (episodeId.isNullOrEmpty()) "book" else "podcast",
+            duration = sidecar.timeline().totalDuration,
+            currentTime = start,
+            timeListening = stored?.timeListening ?: 0.0,
+            startTime = stored?.startTime ?: start,
+            startedAt = stored?.startedAt ?: now,
+            updatedAt = now,
+            displayTitle = sidecar.title,
+            displayAuthor = sidecar.author,
+            mediaMetadata = LocalMediaMetadata(title = sidecar.title),
+            deviceInfo = LocalDeviceInfo(deviceId = deviceId),
+        )
+        localSessions?.upsert(local)
+        hopWait {
+            liveSession = false
+            val tracks = sidecar.tracks.map {
+                AudioTrack(
+                    index = it.index,
+                    startOffset = it.startOffset,
+                    duration = it.duration,
+                    title = it.title,
+                    mimeType = it.mimeType,
+                    ino = it.ino,
+                    byteSize = it.byteSize,
+                )
+            }
+            val chapters = sidecar.chapters.map {
+                io.github.miniaudiobookshelf.core.Chapter(id = it.id, start = it.start, end = it.end, title = it.title)
+            }
+            attachPlaylist(itemId, episodeId, sidecar.title, sidecar.author, tracks, chapters, start, start, local.id, uris, coverUrl(itemId, episodeId.orEmpty()))
+            settings.setLastItemId(itemId)
+            settings.setLastEpisodeId(episodeId.orEmpty())
+        }
+    }
+
+    private fun coverUrl(itemId: String, episodeId: String): String {
+        val sidecar = catalog.sidecar(itemId, episodeId)
+        if (sidecar != null) {
+            val file = java.io.File(catalog.record(itemId, episodeId)?.sidecarPath.orEmpty()).parentFile
+            val cover = file?.let { java.io.File(it, sidecar.coverFileName) }
+            if (cover != null && cover.isFile) return cover.toUri().toString()
+        }
+        return api.coverUrl(itemId)
+    }
+
+    private fun attachPlaylist(
+        itemId: String,
+        episodeId: String?,
+        title: String,
+        author: String,
+        sessionTracks: List<AudioTrack>,
+        chapters: List<io.github.miniaudiobookshelf.core.Chapter>,
+        serverCurrentTime: Double,
+        startOverride: Double,
+        newSessionId: String,
+        uris: List<String>,
+        artUrl: String,
+    ) {
+        sessionId = newSessionId
+        lastServerCurrentTime = serverCurrentTime
+        tracks = sessionTracks
+        val timeline = BookTimeline(sessionTracks, chapters)
         val rate = ViewLogic.clampRate(settings.getPlaybackRate())
-        val start = if (startOverride >= 0) startOverride else session.currentTime
+        val start = if (startOverride >= 0) startOverride else serverCurrentTime
         val pos = timeline.resolve(start)
         stateHolder.update {
             it.copy(
                 itemId = itemId,
                 episodeId = episodeId.orEmpty(),
-                title = session.title,
-                author = session.author,
-                artUrl = api.coverUrl(itemId),
+                title = title,
+                author = author,
+                artUrl = artUrl,
                 timeline = timeline,
                 duration = timeline.totalDuration,
                 rate = rate,
@@ -303,32 +445,29 @@ class PlaybackEngine(
                 finished = false,
             )
         }
-        val items = session.tracks.map { track ->
+        val items = sessionTracks.mapIndexed { i, track ->
+            val uri = uris.getOrNull(i) ?: uris.getOrNull(0) ?: return@mapIndexed null
             MediaItem.Builder()
-                .setUri(resolveTrackUri(session.id, track.index))
+                .setUri(uri.toUri())
                 .setMediaId(itemId)
                 .setMimeType(track.mimeType.ifEmpty { null })
                 .setMediaMetadata(
                     MediaMetadata.Builder()
-                        .setTitle(session.title)
-                        .setArtist(session.author)
+                        .setTitle(title)
+                        .setArtist(author)
                         .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
                         .build(),
                 )
                 .build()
-        }
-        val playlistIndex = session.tracks.indexOfFirst { it.index == pos.index }.coerceAtLeast(0)
+        }.filterNotNull()
+        val playlistIndex = sessionTracks.indexOfFirst { it.index == pos.index }.coerceAtLeast(0)
         val localMs = (pos.localOffset * 1000.0).toLong().coerceAtLeast(0L)
         suppressPosition = false
-        player.setMediaItems(items, playlistIndex, localMs)
+        player.setMediaItems(items, playlistIndex.coerceAtMost((items.size - 1).coerceAtLeast(0)), localMs)
         applyRate()
         player.prepare()
         player.play()
         startPositionTimer()
-    }
-
-    private fun resolveTrackUri(sessionId: String, trackIndex: Int): Uri {
-        return api.streamUrl(sessionId, trackIndex).toUri()
     }
 
     private fun applySeek(bookTime: Double) {
@@ -433,13 +572,27 @@ class PlaybackEngine(
     private suspend fun closeSession() {
         val id = sessionId ?: return
         sessionId = null
-        withContext(Dispatchers.IO) {
-            try {
-                api.closeSession(id)
-            } catch (_: Exception) {
-                android.util.Log.w(TAG, "failed to close playback session for item ${stateHolder.value.itemId}")
+        if (liveSession) {
+            withContext(Dispatchers.IO) {
+                try {
+                    api.closeSession(id)
+                } catch (_: Exception) {
+                    android.util.Log.w(TAG, "failed to close playback session for item ${stateHolder.value.itemId}")
+                }
             }
+        } else {
+            localFlush?.flush()
         }
+    }
+
+    fun noteLocalListen(position: Double, delta: Double, duration: Double, nowMillis: Long) {
+        val id = sessionId ?: return
+        if (liveSession) return
+        localSessions?.addListened(id, position, delta, duration, nowMillis)
+    }
+
+    fun flushLocal() {
+        localFlush?.flushAsync()
     }
 
     private fun onTrackTransition(reason: Int) {

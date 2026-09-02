@@ -61,6 +61,21 @@ class ApiClient(
         return server.join("/public/session/${UriEscape.escape(sessionId)}/track/$index")
     }
 
+    fun fileDownloadUrl(itemId: String, ino: String): String {
+        return server.join(DownloadFiles.fileDownloadPath(itemId, ino))
+    }
+
+    suspend fun syncLocalSessions(sessions: List<LocalPlaybackSession>): List<LocalSyncResult> {
+        val body = send(
+            "POST",
+            "/api/session/local-all",
+            extraHeaders = emptyMap(),
+            jsonBody = LocalSessionCodec.requestBody(sessions),
+            attachAuth = true,
+        )
+        return LocalSessionCodec.parseResults(body)
+    }
+
     suspend fun play(itemId: String, deviceId: String, episodeId: String? = null): PlaySession {
         val path = playUrlPath(itemId, episodeId)
         val payload = json.encodeToString(
@@ -128,8 +143,8 @@ class ApiClient(
         send("POST", "/logout", extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
     }
 
-    suspend fun authorize() {
-        send("GET", "/api/authorize", extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
+    suspend fun authorize(): String {
+        return send("GET", "/api/authorize", extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
     }
 
     private suspend fun send(

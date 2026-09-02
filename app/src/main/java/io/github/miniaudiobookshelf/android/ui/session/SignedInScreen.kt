@@ -56,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.miniaudiobookshelf.android.MiniAbsApplication
 import io.github.miniaudiobookshelf.android.R
 import io.github.miniaudiobookshelf.android.browse.BrowseUi
 import io.github.miniaudiobookshelf.android.player.PlaybackCommands
@@ -63,6 +64,8 @@ import io.github.miniaudiobookshelf.android.session.SessionController
 import io.github.miniaudiobookshelf.android.session.SessionState
 import io.github.miniaudiobookshelf.android.ui.browse.DetailScreen
 import io.github.miniaudiobookshelf.android.ui.browse.LibraryScreen
+import io.github.miniaudiobookshelf.android.ui.download.DownloadsScreen
+import io.github.miniaudiobookshelf.android.ui.download.toLibraryItem
 import io.github.miniaudiobookshelf.android.ui.player.NowPlayingBar
 import io.github.miniaudiobookshelf.android.ui.player.PlayerScreen
 import io.github.miniaudiobookshelf.android.ui.player.QueueSheet
@@ -86,8 +89,11 @@ fun SignedInScreen(
     var showLibraries by remember { mutableStateOf(false) }
     var playerOpen by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
+    var showDownloads by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
+    val app = context.applicationContext as MiniAbsApplication
+    val downloadRows by app.downloadController.records.collectAsStateWithLifecycle()
     val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val queueAvailable = player.episodeId.isNotEmpty() || queueEntries.isNotEmpty()
     val coverUrl = if (player.itemId.isNotEmpty()) {
@@ -135,6 +141,9 @@ fun SignedInScreen(
     BackHandler(enabled = !playerOpen && ui.detail == null && ui.searchOpen) {
         browse.closeSearch()
     }
+    BackHandler(enabled = !playerOpen && ui.detail == null && !ui.searchOpen && showDownloads) {
+        showDownloads = false
+    }
 
     if (playerOpen && player.itemId.isNotEmpty()) {
         Box(modifier.fillMaxSize()) {
@@ -167,10 +176,28 @@ fun SignedInScreen(
                         onQuery = browse::onQuery,
                         onClose = { browse.closeSearch() },
                     )
+                } else if (showDownloads) {
+                    TopAppBar(
+                        navigationIcon = {
+                            IconButton(onClick = { showDownloads = false }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = stringResource(R.string.back),
+                                )
+                            }
+                        },
+                        title = { Text(stringResource(R.string.downloads)) },
+                        actions = {
+                            TextButton(onClick = { confirmSignOut = true }) {
+                                Text(stringResource(R.string.sign_out))
+                            }
+                        },
+                    )
                 } else {
                     LibraryTopBar(
                         ui = ui,
                         onPickLibrary = { showLibraries = true },
+                        onDownloads = { showDownloads = true },
                         onSignOut = { confirmSignOut = true },
                     )
                 }
@@ -188,7 +215,7 @@ fun SignedInScreen(
                 }
             },
             floatingActionButton = {
-                if (ui.detail == null && !ui.searchOpen) {
+                if (ui.detail == null && !ui.searchOpen && !showDownloads) {
                     FloatingActionButton(onClick = { browse.openSearch() }) {
                         Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search))
                     }
@@ -200,6 +227,17 @@ fun SignedInScreen(
                 DetailScreen(
                     browse = browse,
                     ui = ui,
+                    canDownload = state.canDownload,
+                    modifier = Modifier.padding(innerPadding),
+                )
+            } else if (showDownloads) {
+                DownloadsScreen(
+                    records = downloadRows,
+                    downloads = app.downloadController,
+                    onOpen = { row ->
+                        showDownloads = false
+                        browse.openDetail(row.toLibraryItem(), row.episodeId.ifEmpty { null })
+                    },
                     modifier = Modifier.padding(innerPadding),
                 )
             } else {
@@ -250,10 +288,11 @@ fun SignedInScreen(
     }
 
     if (confirmSignOut) {
-        val body = if (state.apiKey) {
-            stringResource(R.string.sign_out_api_key_body)
-        } else {
-            stringResource(R.string.sign_out_body)
+        val hasDownloads = downloadRows.isNotEmpty()
+        val body = when {
+            hasDownloads -> stringResource(R.string.sign_out_downloads_body)
+            state.apiKey -> stringResource(R.string.sign_out_api_key_body)
+            else -> stringResource(R.string.sign_out_body)
         }
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
@@ -263,15 +302,27 @@ fun SignedInScreen(
                 TextButton(
                     onClick = {
                         confirmSignOut = false
-                        session.confirmSignOut()
+                        session.confirmSignOut(deleteDownloads = false)
                     },
                 ) {
-                    Text(stringResource(R.string.sign_out))
+                    Text(if (hasDownloads) stringResource(R.string.keep_downloads) else stringResource(R.string.sign_out))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { confirmSignOut = false }) {
-                    Text(stringResource(R.string.cancel))
+                Row {
+                    if (hasDownloads) {
+                        TextButton(
+                            onClick = {
+                                confirmSignOut = false
+                                session.confirmSignOut(deleteDownloads = true)
+                            },
+                        ) {
+                            Text(stringResource(R.string.delete_downloads))
+                        }
+                    }
+                    TextButton(onClick = { confirmSignOut = false }) {
+                        Text(stringResource(R.string.cancel))
+                    }
                 }
             },
         )
@@ -310,6 +361,7 @@ fun SignedInScreen(
 private fun LibraryTopBar(
     ui: BrowseUi,
     onPickLibrary: () -> Unit,
+    onDownloads: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val name = ui.selected?.name?.ifEmpty { ui.selected?.id.orEmpty() }.orEmpty()
@@ -334,6 +386,9 @@ private fun LibraryTopBar(
             }
         },
         actions = {
+            TextButton(onClick = onDownloads) {
+                Text(stringResource(R.string.downloads))
+            }
             TextButton(onClick = onSignOut) {
                 Text(stringResource(R.string.sign_out))
             }

@@ -17,6 +17,8 @@ interface SettingsStore {
     fun setLastItemId(value: String)
     fun getLastEpisodeId(): String
     fun setLastEpisodeId(value: String)
+    fun getAllowMeteredDownloads(): Boolean
+    fun setAllowMeteredDownloads(value: Boolean)
 }
 
 class MemorySettingsStore : SettingsStore {
@@ -28,6 +30,7 @@ class MemorySettingsStore : SettingsStore {
     private var playbackRate: Double = 1.0
     private var lastItemId: String = ""
     private var lastEpisodeId: String = ""
+    private var allowMeteredDownloads: Boolean = false
 
     override fun getServerUrl(): String = serverUrl
     override fun setServerUrl(value: String) {
@@ -73,5 +76,11 @@ class MemorySettingsStore : SettingsStore {
 
     override fun setLastEpisodeId(value: String) {
         lastEpisodeId = value
+    }
+
+    override fun getAllowMeteredDownloads(): Boolean = allowMeteredDownloads
+
+    override fun setAllowMeteredDownloads(value: Boolean) {
+        allowMeteredDownloads = value
     }
 }

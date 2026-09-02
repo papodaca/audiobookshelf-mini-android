@@ -38,6 +38,8 @@ data class AudioTrack(
     val title: String = "",
     val contentUrl: String = "",
     val mimeType: String = "",
+    val ino: String = "",
+    val byteSize: Long = 0,
 )
 
 data class Chapter(
@@ -296,7 +298,9 @@ object Models {
         }
         var numTracks = optInt(media, "numTracks")
         var numEpisodes = optInt(media, "numEpisodes")
-        val tracks = (media["tracks"] as? JsonArray)?.let(::readTracks).orEmpty()
+        var tracks = (media["tracks"] as? JsonArray)?.let(::readTracks).orEmpty()
+        val audioFiles = (media["audioFiles"] as? JsonArray)?.let(::readAudioFiles).orEmpty()
+        tracks = mergeTrackFiles(tracks, audioFiles)
         if (numTracks == 0 && tracks.isNotEmpty()) numTracks = tracks.size
         val chapters = (media["chapters"] as? JsonArray)?.let(::readChapters).orEmpty()
         val episodes = (media["episodes"] as? JsonArray)?.let { arr ->
@@ -437,13 +441,17 @@ object Models {
     private fun readTracks(array: JsonArray): List<AudioTrack> {
         return array.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
+            val meta = obj["metadata"] as? JsonObject
+            val contentUrl = optString(obj, "contentUrl")
             AudioTrack(
                 index = optInt(obj, "index"),
                 startOffset = optDouble(obj, "startOffset"),
                 duration = optDouble(obj, "duration"),
                 title = optString(obj, "title"),
-                contentUrl = optString(obj, "contentUrl"),
+                contentUrl = contentUrl,
                 mimeType = optString(obj, "mimeType"),
+                ino = optString(obj, "ino").ifEmpty { DownloadFiles.inoFromContentUrl(contentUrl) },
+                byteSize = meta?.let { optLong(it, "size") } ?: 0L,
             )
         }
     }
@@ -470,7 +478,51 @@ object Models {
             val tags = audio["metaTags"] as? JsonObject
             if (tags != null) title = optString(tags, "tagTitle").trim()
         }
-        return item.copy(title = title, duration = duration)
+        val ino = optString(audio, "ino")
+        val meta = audio["metadata"] as? JsonObject
+        val size = if (meta != null) optLong(meta, "size") else 0L
+        val mime = optString(audio, "mimeType").ifEmpty { optString(audio, "contentType") }
+        val track = AudioTrack(
+            index = 1,
+            startOffset = 0.0,
+            duration = duration,
+            title = title,
+            contentUrl = if (ino.isEmpty() || item.id.isEmpty()) "" else "/api/items/${item.id}/file/$ino",
+            mimeType = mime,
+            ino = ino,
+            byteSize = size,
+        )
+        return item.copy(title = title, duration = duration, tracks = listOf(track), numTracks = 1)
+    }
+
+    private fun readAudioFiles(array: JsonArray): List<AudioTrack> {
+        return array.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val meta = obj["metadata"] as? JsonObject
+            AudioTrack(
+                index = optInt(obj, "index"),
+                startOffset = 0.0,
+                duration = optDouble(obj, "duration"),
+                title = meta?.let { optString(it, "filename") }.orEmpty(),
+                mimeType = optString(obj, "mimeType"),
+                ino = optString(obj, "ino"),
+                byteSize = meta?.let { optLong(it, "size") } ?: 0L,
+            )
+        }
+    }
+
+    private fun mergeTrackFiles(tracks: List<AudioTrack>, audioFiles: List<AudioTrack>): List<AudioTrack> {
+        if (tracks.isEmpty()) return audioFiles
+        return tracks.map { track ->
+            val ino = track.ino.ifEmpty { DownloadFiles.inoFromContentUrl(track.contentUrl) }
+            val fromFile = audioFiles.firstOrNull { file ->
+                (file.ino.isNotEmpty() && file.ino == ino) || (file.index != 0 && file.index == track.index)
+            }
+            track.copy(
+                ino = ino.ifEmpty { fromFile?.ino.orEmpty() },
+                byteSize = if (track.byteSize > 0) track.byteSize else (fromFile?.byteSize ?: 0L),
+            )
+        }
     }
 
     private fun objectRoot(json: String): JsonObject {

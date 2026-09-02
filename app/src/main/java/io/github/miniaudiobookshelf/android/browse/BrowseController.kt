@@ -2,7 +2,10 @@ package io.github.miniaudiobookshelf.android.browse
 
 import io.github.miniaudiobookshelf.core.ApiClient
 import io.github.miniaudiobookshelf.core.ApiError
+import io.github.miniaudiobookshelf.core.AudioTrack
 import io.github.miniaudiobookshelf.core.Chapter
+import io.github.miniaudiobookshelf.core.DownloadCatalog
+import io.github.miniaudiobookshelf.core.EmptyDownloadCatalog
 import io.github.miniaudiobookshelf.core.Library
 import io.github.miniaudiobookshelf.core.LibraryItem
 import io.github.miniaudiobookshelf.core.PlaybackQueue
@@ -27,6 +30,7 @@ class BrowseController(
     val queue: PlaybackQueue,
     val playback: PlaybackStarter,
     private val scope: CoroutineScope,
+    private val downloads: DownloadCatalog = EmptyDownloadCatalog,
     var onSessionExpired: () -> Unit = {},
 ) {
     private val _ui = MutableStateFlow(BrowseUi())
@@ -105,7 +109,34 @@ class BrowseController(
             } catch (_: ApiError.Unauthorized) {
                 onSessionExpired()
             } catch (_: Exception) {
-                _ui.update { it.copy(loading = false, error = "Couldn't load this book") }
+                val sidecar = downloads.sidecar(item.id, episodeId.orEmpty())
+                if (sidecar != null) {
+                    val tracks = sidecar.tracks.map { track ->
+                        AudioTrack(
+                            index = track.index,
+                            startOffset = track.startOffset,
+                            duration = track.duration,
+                            title = track.title,
+                            mimeType = track.mimeType,
+                            ino = track.ino,
+                            byteSize = track.byteSize,
+                        )
+                    }
+                    val offline = item.copy(
+                        title = sidecar.title.ifEmpty { item.title },
+                        author = sidecar.author.ifEmpty { item.author },
+                        episodeId = sidecar.episodeId.ifEmpty { item.episodeId },
+                        tracks = tracks,
+                        numTracks = tracks.size,
+                        chapters = sidecar.chapters.map { chapter ->
+                            Chapter(id = chapter.id, start = chapter.start, end = chapter.end, title = chapter.title)
+                        },
+                        duration = sidecar.timeline().totalDuration,
+                    )
+                    _ui.update { it.copy(detail = offline, loading = false, error = null) }
+                } else {
+                    _ui.update { it.copy(loading = false, error = "Couldn't load this book") }
+                }
             }
         }
     }

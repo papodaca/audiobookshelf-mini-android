@@ -127,6 +127,15 @@ class SyncDriver(
         val position = state.position
         val duration = state.duration
         val delta = policy.commitSync(position, now)
+        if (!engine.usesLiveSync) {
+            engine.noteLocalListen(position, delta, duration, now * 1000)
+            sending = false
+            applyDecision(policy.onSyncOutcome(SyncOutcome.OK))
+            if (state.intended != IntendedState.PLAYING) {
+                engine.flushLocal()
+            }
+            return
+        }
         try {
             api.syncSession(id, position, duration, delta)
             sending = false

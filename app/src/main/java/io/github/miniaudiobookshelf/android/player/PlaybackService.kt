@@ -258,6 +258,11 @@ class PlaybackService : MediaLibraryService() {
             scope = serviceScope,
             stateHolder = app().playback.stateFlow,
             mainHandler = Handler(Looper.getMainLooper()),
+            catalog = app().downloads,
+            reachability = app().reachability,
+            localSessions = app().localSessions,
+            localFlush = app().localFlush,
+            signedIn = { app().session.isSignedIn() },
         )
         val driver = SyncDriver(
             engine = playback,

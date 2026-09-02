@@ -53,6 +53,8 @@ class ModelsTest {
         assertEquals("Chapter One", item.chapters[0].title)
         assertEquals(3600.0, item.duration)
         assertTrue(item.playable)
+        assertEquals("123", item.tracks[0].ino)
+        assertEquals(12345678L, item.tracks[0].byteSize)
     }
 
     @Test

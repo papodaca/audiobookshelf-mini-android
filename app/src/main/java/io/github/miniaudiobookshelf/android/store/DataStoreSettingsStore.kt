@@ -3,6 +3,7 @@ package io.github.miniaudiobookshelf.android.store
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -30,6 +31,7 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
     private var playbackRate: Double = 1.0
     private var lastItemId: String = ""
     private var lastEpisodeId: String = ""
+    private var allowMeteredDownloads: Boolean = false
 
     init {
         val prefs = runBlocking { dataStore.data.first() }
@@ -41,6 +43,7 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         playbackRate = prefs[PLAYBACK_RATE]?.toDoubleOrNull()?.coerceIn(0.5, 3.0) ?: 1.0
         lastItemId = prefs[LAST_ITEM_ID].orEmpty()
         lastEpisodeId = prefs[LAST_EPISODE_ID].orEmpty()
+        allowMeteredDownloads = prefs[ALLOW_METERED] ?: false
     }
 
     override fun getServerUrl(): String = synchronized(lock) { serverUrl }
@@ -108,6 +111,13 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         persist { it[LAST_EPISODE_ID] = value }
     }
 
+    override fun getAllowMeteredDownloads(): Boolean = synchronized(lock) { allowMeteredDownloads }
+
+    override fun setAllowMeteredDownloads(value: Boolean) {
+        synchronized(lock) { allowMeteredDownloads = value }
+        persist { it[ALLOW_METERED] = value }
+    }
+
     private fun persist(mutate: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         scope.launch {
             dataStore.edit(mutate)
@@ -123,6 +133,7 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         private val PLAYBACK_RATE = stringPreferencesKey("playback_rate")
         private val LAST_ITEM_ID = stringPreferencesKey("last_item_id")
         private val LAST_EPISODE_ID = stringPreferencesKey("last_episode_id")
+        private val ALLOW_METERED = booleanPreferencesKey("allow_metered_downloads")
 
         private fun encodePins(pins: Map<String, String>): String {
             val obj = JSONObject()

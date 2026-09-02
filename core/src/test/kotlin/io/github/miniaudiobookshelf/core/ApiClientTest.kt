@@ -227,6 +227,38 @@ class ApiClientTest {
     }
 
     @Test
+    fun fileDownloadUrlIsAuthenticatedPathWithoutQueryToken() {
+        val client = clientWith(FakeTransport(), FakeTokenProvider("secret-access-token"))
+        val url = client.fileDownloadUrl("item-single", "123")
+        assertEquals("https://abs.example.com/api/items/item-single/file/123/download", url)
+        assertFalse(url.contains("token="))
+        assertFalse(url.contains("secret-access-token"))
+        assertFalse(url.contains("/public/session/"))
+    }
+
+    @Test
+    fun syncLocalAllPostsFullSessionObjects() = runTest {
+        val transport = FakeTransport()
+        transport.enqueue(200, """{"results":[{"id":"11111111-1111-4111-8111-111111111111","success":true}]}""")
+        val client = clientWith(transport, FakeTokenProvider("secret-access-token"))
+        val session = LocalPlaybackSession(
+            id = "11111111-1111-4111-8111-111111111111",
+            libraryItemId = "item-1",
+            currentTime = 12.0,
+            timeListening = 12.0,
+            displayTitle = "Book",
+            deviceInfo = LocalDeviceInfo(deviceId = "dev-1"),
+        )
+        val results = client.syncLocalSessions(listOf(session))
+        assertTrue(results.single().success)
+        val req = transport.requests.single()
+        assertTrue(req.uri.endsWith("/api/session/local-all"))
+        assertEquals("Bearer secret-access-token", req.headers["Authorization"])
+        assertTrue(req.body!!.contains("\"sessions\""))
+        assertFalse(req.uri.contains("token="))
+    }
+
+    @Test
     fun playPostsForceDirectPlayAndDeviceInfo() = runTest {
         val transport = FakeTransport()
         transport.enqueue(200, fixture("play-session.json"))

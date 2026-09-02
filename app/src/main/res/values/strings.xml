@@ -60,4 +60,23 @@
     <string name="move_up">Move up</string>
     <string name="move_down">Move down</string>
     <string name="remove_from_queue">Remove from queue</string>
+    <string name="downloads">Downloads</string>
+    <string name="download">Download</string>
+    <string name="downloaded">Downloaded</string>
+    <string name="delete_download">Delete download</string>
+    <string name="delete_downloads">Delete downloads</string>
+    <string name="keep_downloads">Keep downloads</string>
+    <string name="download_queued">Waiting to download</string>
+    <string name="download_running">Downloading</string>
+    <string name="download_paused">Download paused</string>
+    <string name="download_failed">Download failed</string>
+    <string name="download_percent">Downloading %1$d%%</string>
+    <string name="download_waiting_wifi">Waiting for Wi-Fi</string>
+    <string name="download_starting">Starting download</string>
+    <string name="download_notification_title">Downloading</string>
+    <string name="download_channel">Downloads</string>
+    <string name="downloads_empty">Nothing downloaded</string>
+    <string name="downloads_empty_body">Downloads you keep stay on this phone and play without a network.</string>
+    <string name="allow_metered_downloads">Allow downloads on cellular</string>
+    <string name="sign_out_downloads_body">Keep downloaded files on this phone, or delete them? Keep is the default. Play still needs a sign-in.</string>
 </resources>

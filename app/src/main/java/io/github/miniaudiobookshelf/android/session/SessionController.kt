@@ -17,8 +17,11 @@ import io.github.miniaudiobookshelf.core.PlaybackQueue
 import io.github.miniaudiobookshelf.core.PlaybackStarter
 import io.github.miniaudiobookshelf.core.ServerUrl
 import io.github.miniaudiobookshelf.core.SettingsStore
+import io.github.miniaudiobookshelf.core.TokenProvider
 import io.github.miniaudiobookshelf.core.TokenStore
 import io.github.miniaudiobookshelf.core.TrustStore
+import io.github.miniaudiobookshelf.core.UserAccess
+import io.github.miniaudiobookshelf.core.UserAccessParser
 import io.github.miniaudiobookshelf.core.ViewLogic
 import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
@@ -48,14 +51,26 @@ class SessionController(
     private var browse: BrowseController? = null
     private val queue = PlaybackQueue()
     var downloads: DownloadCatalog = EmptyDownloadCatalog
+    var onSignOutDownloads: ((delete: Boolean) -> Unit)? = null
+    var onSignedIn: (() -> Unit)? = null
+    var userAccess: UserAccess = UserAccess()
+        private set
 
     fun coverOkHttpClient(): okhttp3.OkHttpClient = transport.imageClient { credentials }
 
     fun mediaOkHttpClient(): okhttp3.OkHttpClient = transport.mediaClient()
 
+    fun downloadOkHttpClient(): okhttp3.OkHttpClient = transport.mediaClient()
+
     fun apiClient(): ApiClient? = api
 
+    fun tokenProvider(): TokenProvider? = credentials
+
     fun settingsStore(): SettingsStore = settings
+
+    fun isSignedIn(): Boolean = _state.value is SessionState.SignedIn
+
+    fun canDownload(): Boolean = isSignedIn() && userAccess.canDownload
 
     fun deviceId(): String {
         val mgr = credentials
@@ -128,8 +143,11 @@ class SessionController(
             val mgr = credentials ?: return@launch
             setBusy(true)
             try {
-                withContext(Dispatchers.IO) { mgr.signInPassword(username, password) }
-                api?.setTokenProvider(mgr)
+                withContext(Dispatchers.IO) {
+                    mgr.signInPassword(username, password)
+                    api?.setTokenProvider(mgr)
+                    refreshAccess()
+                }
                 showSignedIn()
             } catch (e: Exception) {
                 showConnectError(ViewLogic.classifyApiError(e, apiKeyPath = false))
@@ -142,8 +160,11 @@ class SessionController(
             val mgr = credentials ?: return@launch
             setBusy(true)
             try {
-                withContext(Dispatchers.IO) { mgr.signInApiKey(key) }
-                api?.setTokenProvider(mgr)
+                withContext(Dispatchers.IO) {
+                    mgr.signInApiKey(key)
+                    api?.setTokenProvider(mgr)
+                    refreshAccess()
+                }
                 showSignedIn()
             } catch (e: Exception) {
                 showConnectError(ViewLogic.classifyApiError(e, apiKeyPath = true))
@@ -151,18 +172,20 @@ class SessionController(
         }
     }
 
-    fun confirmSignOut() {
+    fun confirmSignOut(deleteDownloads: Boolean = false) {
         scope.launch {
             playback.stop()
             try {
                 withContext(Dispatchers.IO) { credentials?.signOut() }
             } catch (_: Exception) {
             }
+            onSignOutDownloads?.invoke(deleteDownloads)
             val url = server?.normalized ?: settings.getServerUrl()
             settings.setLastItemId("")
             settings.setLastEpisodeId("")
             queue.clear()
             browse = null
+            userAccess = UserAccess()
             playback.notifyLibraryChanged()
             _state.value = SessionState.Connect(ConnectUi(url = url))
         }
@@ -181,6 +204,7 @@ class SessionController(
                     val mgr = credentials ?: return@withContext
                     mgr.signInApiKey(token)
                     api?.setTokenProvider(mgr)
+                    refreshAccess()
                 }
                 if (api != null && credentials != null) {
                     showSignedIn()
@@ -214,7 +238,17 @@ class SessionController(
         val mgr = credentials ?: return false
         if (!mgr.restore()) return false
         api?.setTokenProvider(mgr)
+        refreshAccess()
         return true
+    }
+
+    private suspend fun refreshAccess() {
+        val body = try {
+            api?.authorize()
+        } catch (_: Exception) {
+            null
+        } ?: return
+        userAccess = UserAccessParser.parse(body)
     }
 
     private suspend fun probeInternal(urlText: String, httpAck: Boolean) {
@@ -317,6 +351,7 @@ class SessionController(
             queue = queue,
             playback = playback,
             scope = scope,
+            downloads = downloads,
             onSessionExpired = { confirmSignOut() },
         )
         browse = controller
@@ -326,8 +361,10 @@ class SessionController(
             apiKey = mgr.mode == CredentialMode.API_KEY,
             toast = toast,
             browse = controller,
+            canDownload = userAccess.canDownload,
         )
         playback.notifyLibraryChanged()
+        onSignedIn?.invoke()
     }
 
     private fun showConnectError(
@@ -378,6 +415,7 @@ sealed class SessionState {
         val apiKey: Boolean,
         val toast: String? = null,
         val browse: BrowseController,
+        val canDownload: Boolean = true,
     ) : SessionState()
 }
 

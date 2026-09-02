@@ -24,8 +24,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,9 +40,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import io.github.miniaudiobookshelf.android.MiniAbsApplication
 import io.github.miniaudiobookshelf.android.R
 import io.github.miniaudiobookshelf.android.browse.BrowseController
 import io.github.miniaudiobookshelf.android.browse.BrowseUi
+import io.github.miniaudiobookshelf.core.DownloadPolicy
+import io.github.miniaudiobookshelf.core.DownloadRecord
+import io.github.miniaudiobookshelf.core.DownloadStatus
 import io.github.miniaudiobookshelf.core.LibraryItem
 import io.github.miniaudiobookshelf.core.ViewLogic
 
@@ -48,6 +54,7 @@ import io.github.miniaudiobookshelf.core.ViewLogic
 fun DetailScreen(
     browse: BrowseController,
     ui: BrowseUi,
+    canDownload: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val item = ui.detail ?: return
@@ -65,7 +72,7 @@ fun DetailScreen(
         ) {
             CircularProgressIndicator()
         }
-        else -> DetailBody(browse = browse, ui = ui, item = item, modifier = modifier)
+        else -> DetailBody(browse = browse, ui = ui, item = item, canDownload = canDownload, modifier = modifier)
     }
 }
 
@@ -75,6 +82,7 @@ private fun DetailBody(
     browse: BrowseController,
     ui: BrowseUi,
     item: LibraryItem,
+    canDownload: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val episodeId = ui.detailEpisodeId
@@ -98,6 +106,8 @@ private fun DetailBody(
     val progressTarget = if (isShow) null else (episode ?: item)
     val context = LocalContext.current
     val coverUrl = remember(item.id) { browse.coverUrl(item.id) }
+    val app = context.applicationContext as MiniAbsApplication
+    val records by app.downloadController.records.collectAsStateWithLifecycle()
 
     Column(
         modifier = modifier
@@ -148,6 +158,16 @@ private fun DetailBody(
                             Text(stringResource(R.string.add_to_queue))
                         }
                     }
+                }
+                val downloadTarget = if (isShow) null else (episode ?: item)
+                if (downloadTarget != null) {
+                    DownloadButtons(
+                        item = item,
+                        episodeId = downloadTarget.episodeId,
+                        target = downloadTarget,
+                        canDownload = canDownload,
+                        record = records.firstOrNull { it.itemId == item.id && it.episodeId == downloadTarget.episodeId },
+                    )
                 }
                 if (decision == ViewLogic.PlayDecision.NOT_PLAYABLE || (isShow && playTarget == null)) {
                     Text(
@@ -286,6 +306,77 @@ private fun EpisodeList(
             if (episode.playable) {
                 OutlinedButton(onClick = { browse.enqueue(episode, show) }) {
                     Text(stringResource(R.string.add_to_queue))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadButtons(
+    item: LibraryItem,
+    episodeId: String,
+    target: LibraryItem,
+    canDownload: Boolean,
+    record: DownloadRecord?,
+) {
+    val context = LocalContext.current
+    val app = context.applicationContext as MiniAbsApplication
+    val hasFiles = target.tracks.any { it.ino.isNotEmpty() }
+    if (!DownloadPolicy.canDownload(canDownload, hasFiles) && record == null) return
+    val controller = app.downloadController
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        when {
+            record == null || record.status == DownloadStatus.FAILED && record.bytesDownloaded == 0L -> {
+                if (DownloadPolicy.canDownload(canDownload, hasFiles)) {
+                    OutlinedButton(onClick = { controller.enqueue(item, episodeId) }) {
+                        Text(stringResource(R.string.download))
+                    }
+                }
+            }
+            record.status == DownloadStatus.QUEUED || record.status == DownloadStatus.RUNNING -> {
+                val percent = if (record.bytesTotal > 0) {
+                    ((record.bytesDownloaded * 100) / record.bytesTotal).toInt()
+                } else {
+                    0
+                }
+                Text(
+                    text = if (record.waitingUnmetered) {
+                        stringResource(R.string.download_waiting_wifi)
+                    } else {
+                        stringResource(R.string.download_percent, percent)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { controller.pause(item.id, episodeId) }) {
+                        Text(stringResource(R.string.pause))
+                    }
+                    TextButton(onClick = { controller.cancel(item.id, episodeId) }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            }
+            record.status == DownloadStatus.PAUSED || record.status == DownloadStatus.FAILED -> {
+                Text(
+                    text = record.error.ifEmpty { stringResource(R.string.download_paused) },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { controller.retry(item.id, episodeId) }) {
+                        Text(stringResource(R.string.retry))
+                    }
+                    TextButton(onClick = { controller.delete(item.id, episodeId) }) {
+                        Text(stringResource(R.string.delete_download))
+                    }
+                }
+            }
+            record.status == DownloadStatus.COMPLETE -> {
+                Text(stringResource(R.string.downloaded), style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { controller.delete(item.id, episodeId) }) {
+                    Text(stringResource(R.string.delete_download))
                 }
             }
         }

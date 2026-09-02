@@ -2,9 +2,19 @@ package io.github.miniaudiobookshelf.android
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
+import android.net.ConnectivityManager
 import android.os.Bundle
+import androidx.room.Room
 import coil.Coil
 import coil.ImageLoader
+import io.github.miniaudiobookshelf.android.download.DownloadController
+import io.github.miniaudiobookshelf.android.download.DownloadDatabase
+import io.github.miniaudiobookshelf.android.download.DownloadRepository
+import io.github.miniaudiobookshelf.android.download.LocalSessionFlush
+import io.github.miniaudiobookshelf.android.download.LocalSessionStore
+import io.github.miniaudiobookshelf.android.download.NetworkFlushWatcher
+import io.github.miniaudiobookshelf.android.download.ServerReachability
 import io.github.miniaudiobookshelf.android.player.PlaybackCommands
 import io.github.miniaudiobookshelf.android.session.SessionController
 import io.github.miniaudiobookshelf.android.store.DataStoreSettingsStore
@@ -22,6 +32,16 @@ class MiniAbsApplication : Application() {
         private set
     lateinit var playback: PlaybackCommands
         private set
+    lateinit var downloads: DownloadRepository
+        private set
+    lateinit var downloadController: DownloadController
+        private set
+    lateinit var localSessions: LocalSessionStore
+        private set
+    lateinit var localFlush: LocalSessionFlush
+        private set
+    lateinit var reachability: ServerReachability
+        private set
 
     var foregroundActivities: Int = 0
         private set
@@ -33,8 +53,27 @@ class MiniAbsApplication : Application() {
         registerActivityLifecycleCallbacks(ForegroundWatcher())
         val settings = DataStoreSettingsStore(this)
         val secrets = EncryptedSecretStore.create(this)
+        val db = Room.databaseBuilder(this, DownloadDatabase::class.java, "mabs-downloads").build()
+        downloads = DownloadRepository(this, db.dao())
+        localSessions = LocalSessionStore(this)
         playback = PlaybackCommands(this)
         session = SessionController(settings, secrets, SystemClock(), playback)
+        session.downloads = downloads
+        downloadController = DownloadController(
+            context = this,
+            repository = downloads,
+            settings = settings,
+            scope = appScope,
+            canDownload = { session.canDownload() },
+        )
+        val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        localFlush = LocalSessionFlush(localSessions, { session.apiClient() }, appScope)
+        reachability = ServerReachability(connectivity, { session.apiClient() })
+        NetworkFlushWatcher(connectivity, localFlush).start()
+        session.onSignOutDownloads = { delete ->
+            if (delete) downloadController.deleteAll()
+        }
+        session.onSignedIn = { localFlush.flushAsync() }
         Coil.setImageLoader(
             ImageLoader.Builder(this)
                 .okHttpClient { session.coverOkHttpClient() }
@@ -43,6 +82,7 @@ class MiniAbsApplication : Application() {
         )
         session.start()
         watchQueueAdvance()
+        appScope.launch(Dispatchers.IO) { downloads.hydrate() }
     }
 
     private fun watchQueueAdvance() {
