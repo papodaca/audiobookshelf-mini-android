@@ -79,6 +79,30 @@ class BookAwarePlayer(
         engine?.pause()
     }
 
+    override fun getPlayWhenReady(): Boolean {
+        val intended = engine?.state?.value?.intended ?: return super.getPlayWhenReady()
+        return intended == IntendedState.PLAYING
+    }
+
+    override fun getPlaybackState(): Int {
+        val state = engine?.state?.value ?: return super.getPlaybackState()
+        if (state.itemId.isEmpty()) return Player.STATE_IDLE
+        return when (state.pipeline) {
+            PipelineState.BUFFERING -> Player.STATE_BUFFERING
+            PipelineState.PLAYING, PipelineState.PAUSED -> Player.STATE_READY
+            PipelineState.ERROR -> Player.STATE_BUFFERING
+            PipelineState.STOPPED -> if (state.intended == IntendedState.STOPPED) {
+                Player.STATE_IDLE
+            } else {
+                Player.STATE_BUFFERING
+            }
+        }
+    }
+
+    override fun isPlaying(): Boolean {
+        return playWhenReady && playbackState != Player.STATE_IDLE
+    }
+
     override fun setPlaybackParameters(params: PlaybackParameters) {
         engine?.setRate(params.speed.toDouble())
     }
@@ -186,6 +210,7 @@ class BookAwarePlayer(
             .add(Player.COMMAND_SEEK_BACK)
             .add(Player.COMMAND_SEEK_FORWARD)
             .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+            .add(Player.COMMAND_PLAY_PAUSE)
         val hasChapters = engine?.state?.value?.hasChapters == true
         if (hasChapters) {
             builder
@@ -201,6 +226,24 @@ class BookAwarePlayer(
                 .remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
         }
         return builder.build()
+    }
+
+    fun notifySession() {
+        val listeners = synchronized(extraListeners) { extraListeners.toList() }
+        val metadata = mediaMetadata
+        val commands = availableCommands
+        val timeline = currentTimeline
+        val ready = playWhenReady
+        val playing = isPlaying
+        val playback = playbackState
+        listeners.forEach { listener ->
+            listener.onMediaMetadataChanged(metadata)
+            listener.onAvailableCommandsChanged(commands)
+            listener.onTimelineChanged(timeline, Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED)
+            listener.onPlayWhenReadyChanged(ready, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+            listener.onPlaybackStateChanged(playback)
+            listener.onIsPlayingChanged(playing)
+        }
     }
 
     private fun handleControllerItems(items: List<MediaItem>, startPositionMs: Long) {

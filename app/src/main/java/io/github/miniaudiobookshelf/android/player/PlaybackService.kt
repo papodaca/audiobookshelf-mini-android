@@ -2,25 +2,22 @@
 
 package io.github.miniaudiobookshelf.android.player
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
@@ -44,6 +41,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -64,6 +63,12 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
+        val notification = DefaultMediaNotificationProvider.Builder(this)
+            .setChannelId(PLAYBACK_CHANNEL)
+            .setChannelName(R.string.playback_channel)
+            .build()
+        notification.setSmallIcon(android.R.drawable.ic_media_play)
+        setMediaNotificationProvider(notification)
         val player = buildExoPlayer()
         val sessionPlayer = BookAwarePlayer(player)
         sessionPlayer.onPlayItem = { itemId, episodeId, startAt ->
@@ -75,14 +80,27 @@ class PlaybackService : MediaLibraryService() {
         val session = MediaLibrarySession.Builder(this, sessionPlayer, AutoLibraryCallback(this))
             .setSessionActivity(sessionActivity())
             .build()
+        session.setMediaButtonPreferences(mediaButtons(hasChapters = false))
         exo = player
         bookPlayer = sessionPlayer
         mediaSession = session
         app().playback.onLibraryInvalidated = { notifyTreeChanged() }
         serviceScope.launch {
-            app().playback.state.collectLatest { state ->
-                updateArtwork(state)
-            }
+            app().playback.state
+                .map { NotificationSnapshot.from(it) }
+                .distinctUntilChanged()
+                .collectLatest { snap ->
+                    setShowNotificationForIdlePlayer(
+                        if (snap.itemId.isEmpty()) {
+                            SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER
+                        } else {
+                            SHOW_NOTIFICATION_FOR_IDLE_PLAYER_ALWAYS
+                        },
+                    )
+                    mediaSession?.setMediaButtonPreferences(mediaButtons(snap.hasChapters))
+                    bookPlayer?.notifySession()
+                    updateArtwork(snap)
+                }
         }
     }
 
@@ -94,8 +112,10 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        super.onStartCommand(intent, flags, startId)
-        startPlaceholderForeground()
+        if (intent?.action == ACTION_PLAY) {
+            setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_ALWAYS)
+        }
+        val result = super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
             ACTION_PLAY -> {
                 val itemId = intent.getStringExtra(EXTRA_ITEM_ID).orEmpty()
@@ -106,11 +126,12 @@ class PlaybackService : MediaLibraryService() {
                 }
             }
             ACTION_STOP -> {
+                setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
                 engine?.stop()
                 stopSelf()
             }
         }
-        return START_STICKY
+        return result
     }
 
     override fun onDestroy() {
@@ -302,13 +323,13 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    private suspend fun updateArtwork(state: PlayerState) {
-        if (state.itemId.isEmpty()) {
+    private suspend fun updateArtwork(snap: NotificationSnapshot) {
+        if (snap.itemId.isEmpty()) {
             lastCoverUrl = ""
             bookPlayer?.artworkData = null
             return
         }
-        val url = state.artUrl
+        val url = snap.artUrl
         if (url.isEmpty() || url == lastCoverUrl) return
         lastCoverUrl = url
         val bytes = withContext(Dispatchers.IO) {
@@ -321,6 +342,38 @@ class PlaybackService : MediaLibraryService() {
         if (bytes != null) {
             bookPlayer?.artworkData = bytes
         }
+    }
+
+    private fun mediaButtons(hasChapters: Boolean): List<CommandButton> {
+        val buttons = mutableListOf(
+            CommandButton.Builder(CommandButton.ICON_SKIP_BACK_30)
+                .setPlayerCommand(Player.COMMAND_SEEK_BACK)
+                .setDisplayName(getString(R.string.skip_back_30))
+                .setSlots(CommandButton.SLOT_BACK)
+                .build(),
+            CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30)
+                .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
+                .setDisplayName(getString(R.string.skip_forward_30))
+                .setSlots(CommandButton.SLOT_FORWARD)
+                .build(),
+        )
+        if (hasChapters) {
+            buttons.add(
+                CommandButton.Builder(CommandButton.ICON_PREVIOUS)
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .setDisplayName(getString(R.string.previous_chapter))
+                    .setSlots(CommandButton.SLOT_BACK_SECONDARY)
+                    .build(),
+            )
+            buttons.add(
+                CommandButton.Builder(CommandButton.ICON_NEXT)
+                    .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT)
+                    .setDisplayName(getString(R.string.next_chapter))
+                    .setSlots(CommandButton.SLOT_FORWARD_SECONDARY)
+                    .build(),
+            )
+        }
+        return buttons
     }
 
     private fun buildExoPlayer(): ExoPlayer {
@@ -362,33 +415,28 @@ class PlaybackService : MediaLibraryService() {
         const val EXTRA_ITEM_ID = "item_id"
         const val EXTRA_EPISODE_ID = "episode_id"
         const val EXTRA_START_AT = "start_at"
-        private const val PLACEHOLDER_CHANNEL = "mabs_playback"
-        private const val PLACEHOLDER_ID = 1
+        private const val PLAYBACK_CHANNEL = "mabs_playback"
         private const val DEFAULT_ART_PX = 256
         private const val ART_SIZE_HINT = "android.media.extras.MEDIA_ART_SIZE_HINT_PIXELS"
     }
+}
 
-    private fun startPlaceholderForeground() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val manager = getSystemService(NotificationManager::class.java)
-            val channel = NotificationChannel(
-                PLACEHOLDER_CHANNEL,
-                getString(R.string.playback_channel),
-                NotificationManager.IMPORTANCE_LOW,
-            )
-            manager.createNotificationChannel(channel)
-        }
-        val notification = NotificationCompat.Builder(this, PLACEHOLDER_CHANNEL)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.starting_playback))
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setOngoing(true)
-            .build()
-        val type = if (Build.VERSION.SDK_INT >= 29) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-        } else {
-            0
-        }
-        ServiceCompat.startForeground(this, PLACEHOLDER_ID, notification, type)
+private data class NotificationSnapshot(
+    val itemId: String,
+    val title: String,
+    val author: String,
+    val intended: IntendedState,
+    val hasChapters: Boolean,
+    val artUrl: String,
+) {
+    companion object {
+        fun from(state: PlayerState) = NotificationSnapshot(
+            itemId = state.itemId,
+            title = state.title,
+            author = state.author,
+            intended = state.intended,
+            hasChapters = state.hasChapters,
+            artUrl = state.artUrl,
+        )
     }
 }
