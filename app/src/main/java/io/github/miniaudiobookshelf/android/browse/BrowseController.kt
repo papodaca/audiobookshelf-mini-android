@@ -53,8 +53,21 @@ class BrowseController(
     fun selectLibrary(library: Library) {
         searchJob?.cancel()
         settings.setLibraryId(library.id)
-        _ui.update { it.copy(selected = library, query = "", error = null, searching = false) }
+        _ui.update { it.copy(selected = library, query = "", error = null, searching = false, searchOpen = false) }
         loadHome(library)
+    }
+
+    fun openSearch() {
+        _ui.update { it.copy(searchOpen = true) }
+    }
+
+    fun closeSearch() {
+        searchJob?.cancel()
+        val library = _ui.value.selected
+        _ui.update { it.copy(searchOpen = false, query = "", searching = false, error = null) }
+        if (library != null) {
+            loadHome(library)
+        }
     }
 
     fun onQuery(query: String) {
@@ -194,6 +207,7 @@ data class BrowseUi(
     val items: List<LibraryItem> = emptyList(),
     val query: String = "",
     val searching: Boolean = false,
+    val searchOpen: Boolean = false,
     val loading: Boolean = false,
     val empty: Boolean = false,
     val error: String? = null,

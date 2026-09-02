@@ -15,21 +15,11 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,59 +36,13 @@ import io.github.miniaudiobookshelf.android.browse.BrowseUi
 import io.github.miniaudiobookshelf.core.LibraryItem
 import io.github.miniaudiobookshelf.core.ViewLogic
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     browse: BrowseController,
     ui: BrowseUi,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (ui.libraries.isNotEmpty()) {
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = it },
-            ) {
-                OutlinedTextField(
-                    value = ui.selected?.name?.ifEmpty { ui.selected?.id.orEmpty() }.orEmpty(),
-                    onValueChange = {},
-                    readOnly = true,
-                    modifier = Modifier
-                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable)
-                        .fillMaxWidth(),
-                    label = { Text(stringResource(R.string.library)) },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                    singleLine = true,
-                )
-                ExposedDropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false },
-                ) {
-                    ui.libraries.forEach { library ->
-                        DropdownMenuItem(
-                            text = { Text(library.name.ifEmpty { library.id }) },
-                            onClick = {
-                                browse.selectLibrary(library)
-                                expanded = false
-                            },
-                        )
-                    }
-                }
-            }
-        }
-        OutlinedTextField(
-            value = ui.query,
-            onValueChange = browse::onQuery,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.search)) },
-            singleLine = true,
-        )
+    Column(modifier = modifier.fillMaxSize()) {
         if (ui.loading && ui.items.isNotEmpty()) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
@@ -109,9 +53,7 @@ fun LibraryScreen(
                 onRetry = browse::retry,
             )
             ui.loading && ui.items.isEmpty() -> Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
+                modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center,
             ) {
                 CircularProgressIndicator()
@@ -123,10 +65,8 @@ fun LibraryScreen(
             )
             else -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(160.dp),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .weight(1f),
-                contentPadding = PaddingValues(bottom = 24.dp, top = 8.dp),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {

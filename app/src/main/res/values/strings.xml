@@ -18,7 +18,13 @@
     <string name="sign_out_body">Sign out of this server?</string>
     <string name="sign_out_api_key_body">Sign out of this server? The API key stays valid until an admin revokes it.</string>
     <string name="library">Library</string>
+    <string name="libraries">Libraries</string>
+    <string name="switch_library">Switch library</string>
     <string name="search">Search</string>
+    <string name="close_search">Close search</string>
+    <string name="clear_search">Clear search</string>
+    <string name="library_books">Books</string>
+    <string name="library_podcasts">Podcasts</string>
     <string name="retry">Retry</string>
     <string name="library_error">Couldn\'t load library</string>
     <string name="detail_error">Couldn\'t load this book</string>
