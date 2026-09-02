@@ -11,6 +11,8 @@ import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -39,7 +41,11 @@ class AutoLibraryCallback(
         }
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
             .setAvailableSessionCommands(
-                MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS,
+                MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                    .buildUpon()
+                    .add(SessionCommand(PlaybackService.ACTION_SKIP_BACK_10, Bundle.EMPTY))
+                    .add(SessionCommand(PlaybackService.ACTION_SKIP_FORWARD_10, Bundle.EMPTY))
+                    .build(),
             )
             .setAvailablePlayerCommands(
                 MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
@@ -55,6 +61,25 @@ class AutoLibraryCallback(
         if (!service.isSignedIn()) {
             service.sendSignInError(session)
         }
+    }
+
+    override fun onCustomCommand(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        customCommand: SessionCommand,
+        args: Bundle,
+    ): ListenableFuture<SessionResult> {
+        when (customCommand.customAction) {
+            PlaybackService.ACTION_SKIP_BACK_10 -> {
+                service.skipSeconds(-10.0)
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+            PlaybackService.ACTION_SKIP_FORWARD_10 -> {
+                service.skipSeconds(10.0)
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+        }
+        return super.onCustomCommand(session, controller, customCommand, args)
     }
 
     override fun onGetLibraryRoot(

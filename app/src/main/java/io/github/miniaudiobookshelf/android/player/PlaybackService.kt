@@ -17,11 +17,11 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
-import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
+import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
 import io.github.miniaudiobookshelf.android.MainActivity
 import io.github.miniaudiobookshelf.android.MiniAbsApplication
@@ -63,12 +63,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onCreate() {
         super.onCreate()
         setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
-        val notification = DefaultMediaNotificationProvider.Builder(this)
-            .setChannelId(PLAYBACK_CHANNEL)
-            .setChannelName(R.string.playback_channel)
-            .build()
-        notification.setSmallIcon(android.R.drawable.ic_media_play)
-        setMediaNotificationProvider(notification)
+        setMediaNotificationProvider(PlaybackNotificationProvider(this))
         val player = buildExoPlayer()
         val sessionPlayer = BookAwarePlayer(player)
         sessionPlayer.onPlayItem = { itemId, episodeId, startAt ->
@@ -80,7 +75,8 @@ class PlaybackService : MediaLibraryService() {
         val session = MediaLibrarySession.Builder(this, sessionPlayer, AutoLibraryCallback(this))
             .setSessionActivity(sessionActivity())
             .build()
-        session.setMediaButtonPreferences(mediaButtons(hasChapters = false))
+        session.setMediaButtonPreferences(mediaButtons())
+        session.setCustomLayout(mediaButtons())
         exo = player
         bookPlayer = sessionPlayer
         mediaSession = session
@@ -97,7 +93,8 @@ class PlaybackService : MediaLibraryService() {
                             SHOW_NOTIFICATION_FOR_IDLE_PLAYER_ALWAYS
                         },
                     )
-                    mediaSession?.setMediaButtonPreferences(mediaButtons(snap.hasChapters))
+                    mediaSession?.setMediaButtonPreferences(mediaButtons())
+                    mediaSession?.setCustomLayout(mediaButtons())
                     bookPlayer?.notifySession()
                     updateArtwork(snap)
                 }
@@ -244,6 +241,10 @@ class PlaybackService : MediaLibraryService() {
         ensureEngine()?.playItem(hit.id, episodeId, start)
     }
 
+    fun skipSeconds(delta: Double) {
+        ensureEngine()?.skip(delta)
+    }
+
     internal fun ensureEngine(): PlaybackEngine? {
         engine?.let { return it }
         val api = app().session.apiClient() ?: return null
@@ -344,36 +345,19 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    private fun mediaButtons(hasChapters: Boolean): List<CommandButton> {
-        val buttons = mutableListOf(
-            CommandButton.Builder(CommandButton.ICON_SKIP_BACK_30)
-                .setPlayerCommand(Player.COMMAND_SEEK_BACK)
-                .setDisplayName(getString(R.string.skip_back_30))
+    private fun mediaButtons(): List<CommandButton> {
+        return listOf(
+            CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
+                .setSessionCommand(SessionCommand(ACTION_SKIP_BACK_10, Bundle.EMPTY))
+                .setDisplayName(getString(R.string.skip_back_10))
                 .setSlots(CommandButton.SLOT_BACK)
                 .build(),
-            CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_30)
-                .setPlayerCommand(Player.COMMAND_SEEK_FORWARD)
-                .setDisplayName(getString(R.string.skip_forward_30))
+            CommandButton.Builder(CommandButton.ICON_SKIP_FORWARD_10)
+                .setSessionCommand(SessionCommand(ACTION_SKIP_FORWARD_10, Bundle.EMPTY))
+                .setDisplayName(getString(R.string.skip_forward_10))
                 .setSlots(CommandButton.SLOT_FORWARD)
                 .build(),
         )
-        if (hasChapters) {
-            buttons.add(
-                CommandButton.Builder(CommandButton.ICON_PREVIOUS)
-                    .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS)
-                    .setDisplayName(getString(R.string.previous_chapter))
-                    .setSlots(CommandButton.SLOT_BACK_SECONDARY)
-                    .build(),
-            )
-            buttons.add(
-                CommandButton.Builder(CommandButton.ICON_NEXT)
-                    .setPlayerCommand(Player.COMMAND_SEEK_TO_NEXT)
-                    .setDisplayName(getString(R.string.next_chapter))
-                    .setSlots(CommandButton.SLOT_FORWARD_SECONDARY)
-                    .build(),
-            )
-        }
-        return buttons
     }
 
     private fun buildExoPlayer(): ExoPlayer {
@@ -415,7 +399,8 @@ class PlaybackService : MediaLibraryService() {
         const val EXTRA_ITEM_ID = "item_id"
         const val EXTRA_EPISODE_ID = "episode_id"
         const val EXTRA_START_AT = "start_at"
-        private const val PLAYBACK_CHANNEL = "mabs_playback"
+        const val ACTION_SKIP_BACK_10 = "io.github.miniaudiobookshelf.android.action.SKIP_BACK_10"
+        const val ACTION_SKIP_FORWARD_10 = "io.github.miniaudiobookshelf.android.action.SKIP_FORWARD_10"
         private const val DEFAULT_ART_PX = 256
         private const val ART_SIZE_HINT = "android.media.extras.MEDIA_ART_SIZE_HINT_PIXELS"
     }
@@ -426,7 +411,6 @@ private data class NotificationSnapshot(
     val title: String,
     val author: String,
     val intended: IntendedState,
-    val hasChapters: Boolean,
     val artUrl: String,
 ) {
     companion object {
@@ -435,7 +419,6 @@ private data class NotificationSnapshot(
             title = state.title,
             author = state.author,
             intended = state.intended,
-            hasChapters = state.hasChapters,
             artUrl = state.artUrl,
         )
     }
