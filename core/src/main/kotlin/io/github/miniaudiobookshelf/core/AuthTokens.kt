@@ -19,8 +19,12 @@ data class AuthTokens(
                 root.user.expiresIn != null && root.user.expiresIn >= 0 -> root.user.expiresIn
                 else -> -1L
             }
+            val access = root.user.accessToken.ifBlank { root.user.token }
+            if (access.isBlank()) {
+                throw ApiError.Server("invalid auth json")
+            }
             return AuthTokens(
-                access = root.user.token,
+                access = access,
                 refresh = root.user.refreshToken,
                 expiresIn = expires,
             )
@@ -36,7 +40,8 @@ private data class AuthJson(
 
 @Serializable
 private data class AuthUserJson(
-    val token: String,
+    val token: String = "",
+    val accessToken: String = "",
     val refreshToken: String = "",
     val expiresIn: Long? = null,
 )

@@ -2,6 +2,7 @@ package io.github.miniaudiobookshelf.android.store
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -9,11 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import io.github.miniaudiobookshelf.core.SettingsStore
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 
@@ -21,7 +18,6 @@ private val Context.mabsSettings: DataStore<Preferences> by preferencesDataStore
 
 class DataStoreSettingsStore(context: Context) : SettingsStore {
     private val dataStore = context.applicationContext.mabsSettings
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
     private var serverUrl: String = ""
     private var deviceId: String = ""
@@ -118,8 +114,8 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         persist { it[ALLOW_METERED] = value }
     }
 
-    private fun persist(mutate: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
-        scope.launch {
+    private fun persist(mutate: (MutablePreferences) -> Unit) {
+        runBlocking {
             dataStore.edit(mutate)
         }
     }

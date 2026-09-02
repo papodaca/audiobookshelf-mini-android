@@ -161,7 +161,7 @@ class ApiClient(
         }
         val headers = extraHeaders.toMutableMap()
         if (attachAuth) {
-            val token = tokens?.accessToken()
+            val token = tokens?.freshToken()
             if (!token.isNullOrEmpty()) {
                 headers["Authorization"] = "Bearer $token"
             }

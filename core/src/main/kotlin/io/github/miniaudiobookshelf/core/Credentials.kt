@@ -38,6 +38,8 @@ class CredentialManager(
 
     override fun accessToken(): String? = access
 
+    override suspend fun freshToken(): String? = ensureFresh()
+
     fun ensureDeviceId(): String {
         var id = settings.getDeviceId()
         if (id.isEmpty()) {
@@ -80,7 +82,7 @@ class CredentialManager(
     suspend fun signInApiKey(key: String) {
         state = CredentialState.AUTHENTICATING
         mode = CredentialMode.API_KEY
-        persist(key, CredentialMode.API_KEY)
+        persist(key, CredentialMode.API_KEY, key)
         access = key
         refreshToken = null
         refreshAt = 0
@@ -121,27 +123,33 @@ class CredentialManager(
 
     suspend fun restore(): Boolean {
         val stored = store.load(origin) ?: return false
-        val (secret, storedMode) = stored
-        if (storedMode == CredentialMode.API_KEY) {
-            access = secret
+        if (stored.secret.isBlank()) return false
+        if (stored.mode == CredentialMode.API_KEY) {
+            access = stored.secret
             mode = CredentialMode.API_KEY
             refreshAt = 0
             state = CredentialState.VALID
             return true
         }
-        refreshToken = secret
+        refreshToken = stored.secret
         mode = CredentialMode.PASSWORD
+        state = CredentialState.VALID
+        if (!stored.access.isNullOrBlank()) {
+            access = stored.access
+            refreshAt = clock.unixSeconds()
+            return true
+        }
         refreshAt = clock.unixSeconds()
         return try {
             ensureFresh()
-            state == CredentialState.VALID
+            state == CredentialState.VALID && !access.isNullOrBlank()
         } catch (_: ApiError) {
             false
         }
     }
 
     private suspend fun applyPasswordTokens(tokens: AuthTokens) {
-        persist(tokens.refresh, CredentialMode.PASSWORD)
+        persist(tokens.refresh, CredentialMode.PASSWORD, tokens.access)
         access = tokens.access
         refreshToken = tokens.refresh
         mode = CredentialMode.PASSWORD
@@ -168,16 +176,21 @@ class CredentialManager(
             throw e
         }
         val tokens = AuthTokens.parse(body)
-        persist(tokens.refresh, CredentialMode.PASSWORD)
+        persist(tokens.refresh, CredentialMode.PASSWORD, tokens.access)
         access = tokens.access
         refreshToken = tokens.refresh
         scheduleFrom(tokens.expiresIn)
         state = CredentialState.VALID
     }
 
-    private suspend fun persist(secret: String, storedMode: CredentialMode) {
+    private suspend fun persist(secret: String, storedMode: CredentialMode, accessToken: String? = null) {
+        if (secret.isBlank()) {
+            degraded = true
+            degradedNotice = true
+            return
+        }
         try {
-            store.save(origin, secret, storedMode)
+            store.save(origin, secret, storedMode, accessToken)
         } catch (_: Exception) {
             degraded = true
             degradedNotice = true

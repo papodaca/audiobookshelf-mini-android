@@ -94,6 +94,18 @@ class ApiClientTest {
     }
 
     @Test
+    fun authorizedCallUsesFreshToken() = runTest {
+        val transport = FakeTransport()
+        transport.enqueue(200, "")
+        val tokens = object : TokenProvider {
+            override fun accessToken(): String = "stale"
+            override suspend fun freshToken(): String = "fresh-token"
+        }
+        clientWith(transport, tokens).logout()
+        assertEquals("Bearer fresh-token", transport.requests.single().headers["Authorization"])
+    }
+
+    @Test
     fun loginSendsReturnTokensHeaderAndJsonBody() = runTest {
         val transport = FakeTransport()
         transport.enqueue(200, """{"user":{"token":"a","refreshToken":"r"}}""")

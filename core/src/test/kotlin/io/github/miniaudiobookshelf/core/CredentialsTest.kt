@@ -74,6 +74,7 @@ class CredentialsTest {
         assertEquals("access-a", mgr.accessToken())
         assertEquals("refresh-a", store.loadSync("https://abs.example.com"))
         assertFalse(store.loadSync("https://abs.example.com") == "access-a")
+        assertEquals("access-a", store.load("https://abs.example.com")?.access)
         assertEquals(CredentialState.VALID, mgr.state)
     }
 
@@ -237,8 +238,8 @@ class CredentialsTest {
         val b = ServerUrl.parse("https://abs.example.com")
         assertEquals(a.origin, b.origin)
         val store = MemoryTokenStore()
-        store.save(a.origin, "secret", CredentialMode.PASSWORD)
-        store.save(b.origin, "secret-2", CredentialMode.PASSWORD)
+        store.save(a.origin, "secret", CredentialMode.PASSWORD, null)
+        store.save(b.origin, "secret-2", CredentialMode.PASSWORD, null)
         assertEquals(1, store.size)
         assertEquals("secret-2", store.loadSync(a.origin))
     }
@@ -264,5 +265,75 @@ class CredentialsTest {
         assertEquals("a", tokens.access)
         assertEquals("r", tokens.refresh)
         assertEquals(1200, tokens.expiresIn)
+    }
+
+    @Test
+    fun accessTokenIsPreferredOverLegacyToken() {
+        val tokens = AuthTokens.parse(
+            """{"user":{"token":"old-permanent","accessToken":"jwt-access","refreshToken":"r"}}""",
+        )
+        assertEquals("jwt-access", tokens.access)
+        assertEquals("r", tokens.refresh)
+    }
+
+    @Test
+    fun accessTokenAloneIsAccepted() {
+        val tokens = AuthTokens.parse(
+            """{"user":{"accessToken":"jwt-access","refreshToken":"r"}}""",
+        )
+        assertEquals("jwt-access", tokens.access)
+    }
+
+    @Test
+    fun restoreUsesCachedAccessWithoutRefresh() = runTest {
+        val auth = FakeAuthEndpoints().apply { refreshBody = authJson("a2", "r2", 3600) }
+        val store = MemoryTokenStore()
+        store.save("https://abs.example.com", "refresh-a", CredentialMode.PASSWORD, "access-a")
+        val mgr = managerWith(auth, store, MemorySettingsStore(), FakeClock())
+        assertTrue(mgr.restore())
+        assertEquals("access-a", mgr.accessToken())
+        assertEquals(CredentialState.VALID, mgr.state)
+        assertEquals(0, auth.refreshCalls)
+    }
+
+    @Test
+    fun restoreRefreshesWhenAccessIsMissing() = runTest {
+        val auth = FakeAuthEndpoints().apply { refreshBody = authJson("a2", "r2", 3600) }
+        val store = MemoryTokenStore()
+        store.save("https://abs.example.com", "refresh-a", CredentialMode.PASSWORD, null)
+        val mgr = managerWith(auth, store, MemorySettingsStore(), FakeClock())
+        assertTrue(mgr.restore())
+        assertEquals("a2", mgr.accessToken())
+        assertEquals(1, auth.refreshCalls)
+        assertEquals("a2", store.load("https://abs.example.com")?.access)
+    }
+
+    @Test
+    fun restoreRejectsBlankSecret() = runTest {
+        val store = MemoryTokenStore()
+        store.save("https://abs.example.com", "   ", CredentialMode.PASSWORD, "access-a")
+        val mgr = managerWith(FakeAuthEndpoints(), store, MemorySettingsStore(), FakeClock())
+        assertFalse(mgr.restore())
+    }
+
+    @Test
+    fun restoreTransportFailureWithoutAccessFails() = runTest {
+        val auth = FakeAuthEndpoints().apply { refreshError = ApiError.Transport("offline") }
+        val store = MemoryTokenStore()
+        store.save("https://abs.example.com", "refresh-a", CredentialMode.PASSWORD, null)
+        val mgr = managerWith(auth, store, MemorySettingsStore(), FakeClock())
+        assertFalse(mgr.restore())
+        assertEquals("refresh-a", store.loadSync("https://abs.example.com"))
+    }
+
+    @Test
+    fun restoreRejectedRefreshClearsStore() = runTest {
+        val auth = FakeAuthEndpoints().apply { refreshError = ApiError.Unauthorized("nope") }
+        val store = MemoryTokenStore()
+        store.save("https://abs.example.com", "refresh-a", CredentialMode.PASSWORD, null)
+        val mgr = managerWith(auth, store, MemorySettingsStore(), FakeClock())
+        assertFalse(mgr.restore())
+        assertEquals(null, store.loadSync("https://abs.example.com"))
+        assertEquals(CredentialState.NO_CREDENTIAL, mgr.state)
     }
 }

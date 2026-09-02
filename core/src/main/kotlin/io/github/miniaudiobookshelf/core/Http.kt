@@ -16,8 +16,9 @@ interface HttpTransport {
     ): HttpResponse
 }
 
-fun interface TokenProvider {
+interface TokenProvider {
     fun accessToken(): String?
+    suspend fun freshToken(): String? = accessToken()
 }
 
 interface AuthEndpoints {
