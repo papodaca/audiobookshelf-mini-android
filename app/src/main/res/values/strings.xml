@@ -1,4 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Mini Audiobookshelf</string>
+    <string name="connect_blurb">Enter the URL of an Audiobookshelf server 2.26.0 or newer.</string>
+    <string name="server_url">Server URL</string>
+    <string name="continue_action">Continue</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="api_key">API key</string>
+    <string name="sign_in">Sign in</string>
+    <string name="sign_out">Sign out</string>
+    <string name="cancel">Cancel</string>
+    <string name="signed_in">Signed in</string>
+    <string name="http_ack">I understand the risk and want to continue</string>
+    <string name="untrusted_certificate">Untrusted certificate</string>
+    <string name="pin_certificate">Pin certificate</string>
+    <string name="refuse">Refuse</string>
+    <string name="sign_out_body">Sign out of this server?</string>
+    <string name="sign_out_api_key_body">Sign out of this server? The API key stays valid until an admin revokes it.</string>
 </resources>
