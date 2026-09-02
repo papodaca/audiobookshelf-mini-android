@@ -21,8 +21,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.session.MediaLibrarySession
 import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.LibraryParams
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionError
 import io.github.miniaudiobookshelf.android.MainActivity
@@ -62,6 +63,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_NEVER)
         val player = buildExoPlayer()
         val sessionPlayer = BookAwarePlayer(player)
         sessionPlayer.onPlayItem = { itemId, episodeId, startAt ->
@@ -155,7 +157,7 @@ class PlaybackService : MediaLibraryService() {
         )
     }
 
-    fun noteRootHints(params: MediaLibrarySession.LibraryParams?) {
+    fun noteRootHints(params: LibraryParams?) {
         val size = params?.extras?.getInt(ART_SIZE_HINT, 0) ?: 0
         if (size > 0) {
             artSizePx = size
@@ -286,11 +288,18 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun notifyTreeChanged() {
+        serviceScope.launch { notifyTreeChangedOnMain() }
+    }
+
+    private fun notifyTreeChangedOnMain() {
         val session = mediaSession ?: return
         session.notifyChildrenChanged(AutoMediaId.ROOT, Int.MAX_VALUE, null)
         session.notifyChildrenChanged(AutoMediaId.CONTINUE, Int.MAX_VALUE, null)
         session.notifyChildrenChanged(AutoMediaId.DOWNLOADS, Int.MAX_VALUE, null)
         session.notifyChildrenChanged(AutoMediaId.LIBRARIES, Int.MAX_VALUE, null)
+        if (!isSignedIn()) {
+            sendSignInError(session)
+        }
     }
 
     private suspend fun updateArtwork(state: PlayerState) {

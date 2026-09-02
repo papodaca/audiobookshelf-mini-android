@@ -10,6 +10,12 @@ import io.github.miniaudiobookshelf.android.session.SessionController
 import io.github.miniaudiobookshelf.android.store.DataStoreSettingsStore
 import io.github.miniaudiobookshelf.android.store.EncryptedSecretStore
 import io.github.miniaudiobookshelf.core.SystemClock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class MiniAbsApplication : Application() {
     lateinit var session: SessionController
@@ -19,6 +25,8 @@ class MiniAbsApplication : Application() {
 
     var foregroundActivities: Int = 0
         private set
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     override fun onCreate() {
         super.onCreate()
@@ -34,6 +42,21 @@ class MiniAbsApplication : Application() {
                 .build(),
         )
         session.start()
+        watchQueueAdvance()
+    }
+
+    private fun watchQueueAdvance() {
+        appScope.launch {
+            playback.state
+                .map { it.finished }
+                .distinctUntilChanged()
+                .collect { finished ->
+                    if (!finished) return@collect
+                    if (!session.playNextQueued()) {
+                        playback.acknowledgeFinished()
+                    }
+                }
+        }
     }
 
     private inner class ForegroundWatcher : ActivityLifecycleCallbacks {

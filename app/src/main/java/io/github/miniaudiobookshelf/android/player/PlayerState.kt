@@ -43,6 +43,7 @@ data class PlayerState(
     val episodeId: String = "",
     val stalled: Boolean = false,
     val conflict: PlaybackConflict? = null,
+    val finished: Boolean = false,
 ) {
     val hasChapters: Boolean get() = timeline?.hasChapters == true
 

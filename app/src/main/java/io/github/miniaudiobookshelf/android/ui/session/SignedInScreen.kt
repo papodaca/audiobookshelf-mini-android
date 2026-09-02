@@ -6,7 +6,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardActions
@@ -61,6 +63,9 @@ import io.github.miniaudiobookshelf.android.session.SessionController
 import io.github.miniaudiobookshelf.android.session.SessionState
 import io.github.miniaudiobookshelf.android.ui.browse.DetailScreen
 import io.github.miniaudiobookshelf.android.ui.browse.LibraryScreen
+import io.github.miniaudiobookshelf.android.ui.player.NowPlayingBar
+import io.github.miniaudiobookshelf.android.ui.player.PlayerScreen
+import io.github.miniaudiobookshelf.android.ui.player.QueueSheet
 import io.github.miniaudiobookshelf.core.Library
 import io.github.miniaudiobookshelf.core.ViewLogic
 
@@ -75,12 +80,21 @@ fun SignedInScreen(
     val browse = state.browse
     val ui by browse.ui.collectAsStateWithLifecycle()
     val player by playback.state.collectAsStateWithLifecycle()
+    val queueEntries by browse.queue.entries.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var confirmSignOut by remember { mutableStateOf(false) }
     var showLibraries by remember { mutableStateOf(false) }
+    var playerOpen by remember { mutableStateOf(false) }
+    var showQueue by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val context = LocalContext.current
     val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val queueAvailable = player.episodeId.isNotEmpty() || queueEntries.isNotEmpty()
+    val coverUrl = if (player.itemId.isNotEmpty()) {
+        player.artUrl.ifEmpty { browse.coverUrl(player.itemId) }
+    } else {
+        ""
+    }
 
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= 33) {
@@ -100,70 +114,116 @@ fun SignedInScreen(
         session.dismissToast()
     }
 
-    LaunchedEffect(player.statusMessage) {
-        val message = player.statusMessage
-        if (message.isNotEmpty()) {
-            snackbar.showSnackbar(message)
+    LaunchedEffect(ui.notice) {
+        val notice = ui.notice ?: return@LaunchedEffect
+        snackbar.showSnackbar(notice)
+        browse.dismissNotice()
+    }
+
+    LaunchedEffect(player.itemId) {
+        if (player.itemId.isEmpty()) {
+            playerOpen = false
         }
     }
 
-    LaunchedEffect(player.syncUnhealthy) {
-        if (player.syncUnhealthy) {
-            snackbar.showSnackbar(context.getString(R.string.progress_not_saved))
-        }
+    BackHandler(enabled = playerOpen) {
+        playerOpen = false
     }
-
-    BackHandler(enabled = ui.detail != null) {
+    BackHandler(enabled = !playerOpen && ui.detail != null) {
         browse.closeDetail()
     }
-    BackHandler(enabled = ui.detail == null && ui.searchOpen) {
+    BackHandler(enabled = !playerOpen && ui.detail == null && ui.searchOpen) {
         browse.closeSearch()
     }
 
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            if (ui.detail != null) {
-                DetailTopBar(
-                    onBack = { browse.closeDetail() },
-                    onSignOut = { confirmSignOut = true },
-                )
-            } else if (ui.searchOpen) {
-                SearchTopBar(
-                    query = ui.query,
-                    onQuery = browse::onQuery,
-                    onClose = { browse.closeSearch() },
-                )
-            } else {
-                LibraryTopBar(
-                    ui = ui,
-                    onPickLibrary = { showLibraries = true },
-                    onSignOut = { confirmSignOut = true },
-                )
-            }
-        },
-        floatingActionButton = {
-            if (ui.detail == null && !ui.searchOpen) {
-                FloatingActionButton(onClick = { browse.openSearch() }) {
-                    Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search))
-                }
-            }
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { innerPadding ->
-        if (ui.detail != null) {
-            DetailScreen(
-                browse = browse,
-                ui = ui,
-                modifier = Modifier.padding(innerPadding),
+    if (playerOpen && player.itemId.isNotEmpty()) {
+        Box(modifier.fillMaxSize()) {
+            PlayerScreen(
+                state = player,
+                coverUrl = coverUrl,
+                playback = playback,
+                queueAvailable = queueAvailable,
+                onBack = { playerOpen = false },
+                onOpenQueue = { showQueue = true },
+                modifier = Modifier.fillMaxSize(),
             )
-        } else {
-            LibraryScreen(
-                browse = browse,
-                ui = ui,
-                modifier = Modifier.padding(innerPadding),
+            SnackbarHost(
+                hostState = snackbar,
+                modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
+    } else {
+        Scaffold(
+            modifier = modifier,
+            topBar = {
+                if (ui.detail != null) {
+                    DetailTopBar(
+                        onBack = { browse.closeDetail() },
+                        onSignOut = { confirmSignOut = true },
+                    )
+                } else if (ui.searchOpen) {
+                    SearchTopBar(
+                        query = ui.query,
+                        onQuery = browse::onQuery,
+                        onClose = { browse.closeSearch() },
+                    )
+                } else {
+                    LibraryTopBar(
+                        ui = ui,
+                        onPickLibrary = { showLibraries = true },
+                        onSignOut = { confirmSignOut = true },
+                    )
+                }
+            },
+            bottomBar = {
+                if (player.itemId.isNotEmpty()) {
+                    NowPlayingBar(
+                        state = player,
+                        coverUrl = coverUrl,
+                        playback = playback,
+                        queueAvailable = queueAvailable,
+                        onOpenPlayer = { playerOpen = true },
+                        onOpenQueue = { showQueue = true },
+                    )
+                }
+            },
+            floatingActionButton = {
+                if (ui.detail == null && !ui.searchOpen) {
+                    FloatingActionButton(onClick = { browse.openSearch() }) {
+                        Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.search))
+                    }
+                }
+            },
+            snackbarHost = { SnackbarHost(snackbar) },
+        ) { innerPadding ->
+            if (ui.detail != null) {
+                DetailScreen(
+                    browse = browse,
+                    ui = ui,
+                    modifier = Modifier.padding(innerPadding),
+                )
+            } else {
+                LibraryScreen(
+                    browse = browse,
+                    ui = ui,
+                    modifier = Modifier.padding(innerPadding),
+                )
+            }
+        }
+    }
+
+    if (showQueue) {
+        QueueSheet(
+            entries = queueEntries,
+            onDismiss = { showQueue = false },
+            onPlay = { index ->
+                browse.playQueued(index)
+                showQueue = false
+            },
+            onRemove = browse::removeQueued,
+            onMove = browse::moveQueued,
+            onClear = browse::clearQueue,
+        )
     }
 
     if (showLibraries) {

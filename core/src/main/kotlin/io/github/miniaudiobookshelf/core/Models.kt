@@ -12,6 +12,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import java.util.Base64
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 data class Library(
     val id: String,
@@ -95,18 +97,24 @@ data class QueueEntry(
     val showTitle: String = "",
 )
 
+enum class QueueAppendResult {
+    ADDED,
+    DUPLICATE,
+    CURRENT,
+    IGNORED,
+}
+
 class PlaybackQueue {
     private val items = mutableListOf<QueueEntry>()
+    private val _entries = MutableStateFlow<List<QueueEntry>>(emptyList())
+    val entries: StateFlow<List<QueueEntry>> = _entries
+
+    val size: Int
+        @Synchronized
+        get() = items.size
 
     @Synchronized
     fun snapshot(): List<QueueEntry> = items.toList()
-
-    @Synchronized
-    fun append(entry: QueueEntry) {
-        if (entry.episodeId.isEmpty()) return
-        if (contains(entry.itemId, entry.episodeId)) return
-        items.add(entry)
-    }
 
     @Synchronized
     fun contains(itemId: String, episodeId: String): Boolean {
@@ -114,13 +122,73 @@ class PlaybackQueue {
     }
 
     @Synchronized
-    fun removeEpisode(itemId: String, episodeId: String) {
-        items.removeAll { it.itemId == itemId && it.episodeId == episodeId }
+    fun peek(): QueueEntry? = items.firstOrNull()
+
+    @Synchronized
+    fun append(
+        entry: QueueEntry,
+        currentItemId: String = "",
+        currentEpisodeId: String = "",
+    ): QueueAppendResult {
+        if (entry.episodeId.isEmpty()) return QueueAppendResult.IGNORED
+        if (currentEpisodeId.isNotEmpty() &&
+            entry.itemId == currentItemId &&
+            entry.episodeId == currentEpisodeId
+        ) {
+            return QueueAppendResult.CURRENT
+        }
+        if (contains(entry.itemId, entry.episodeId)) return QueueAppendResult.DUPLICATE
+        items.add(entry)
+        publish()
+        return QueueAppendResult.ADDED
+    }
+
+    @Synchronized
+    fun popFront(): QueueEntry? = takeAt(0)
+
+    @Synchronized
+    fun takeAt(index: Int): QueueEntry? {
+        if (index !in items.indices) return null
+        val entry = items.removeAt(index)
+        publish()
+        return entry
+    }
+
+    @Synchronized
+    fun removeAt(index: Int): Boolean {
+        if (index !in items.indices) return false
+        items.removeAt(index)
+        publish()
+        return true
+    }
+
+    @Synchronized
+    fun removeEpisode(itemId: String, episodeId: String): Boolean {
+        val index = items.indexOfFirst { it.itemId == itemId && it.episodeId == episodeId }
+        if (index < 0) return false
+        items.removeAt(index)
+        publish()
+        return true
+    }
+
+    @Synchronized
+    fun move(from: Int, to: Int): Boolean {
+        if (from !in items.indices || to !in items.indices || from == to) return false
+        val entry = items.removeAt(from)
+        items.add(to, entry)
+        publish()
+        return true
     }
 
     @Synchronized
     fun clear() {
+        if (items.isEmpty()) return
         items.clear()
+        publish()
+    }
+
+    private fun publish() {
+        _entries.value = items.toList()
     }
 }
 
@@ -130,6 +198,13 @@ interface PlaybackStarter {
     fun seekTo(bookTime: Double) {}
     fun skip(deltaSeconds: Double) {}
     fun stop() {}
+    fun playPause() {}
+    fun previousChapter() {}
+    fun nextChapter() {}
+    fun setRate(rate: Double) {}
+    fun retry() {}
+    fun playingItemId(): String = ""
+    fun playingEpisodeId(): String = ""
     fun notifyLibraryChanged() {}
 }
 

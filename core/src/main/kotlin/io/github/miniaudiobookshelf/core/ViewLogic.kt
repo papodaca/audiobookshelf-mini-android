@@ -204,4 +204,15 @@ object ViewLogic {
     fun searchHits(json: String, mediaType: String): List<LibraryItem> = Models.searchHits(json, mediaType)
 
     fun clampRate(rate: Double): Double = rate.coerceIn(0.5, 3.0)
+
+    val speedPresets: List<Double> = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0)
+
+    fun formatRate(rate: Double): String {
+        val clamped = clampRate(rate)
+        return if (clamped == clamped.toInt().toDouble()) {
+            "${clamped.toInt()}×"
+        } else {
+            "$clamped×"
+        }
+    }
 }

@@ -1,13 +1,25 @@
 package io.github.miniaudiobookshelf.android
 
+import android.content.ComponentName
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
+import io.github.miniaudiobookshelf.android.player.PlaybackService
 import io.github.miniaudiobookshelf.android.ui.AppRoot
 import java.io.File
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
@@ -18,6 +30,44 @@ class MainActivity : ComponentActivity() {
         setContent {
             AppRoot(session = app.session, playback = app.playback)
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                try {
+                    app.playback.state.collect { player ->
+                        if (player.itemId.isNotEmpty()) {
+                            connectController(app)
+                        } else {
+                            disconnectController(app)
+                        }
+                    }
+                } finally {
+                    disconnectController(app)
+                }
+            }
+        }
+    }
+
+    private fun connectController(app: MiniAbsApplication) {
+        if (controllerFuture != null) return
+        val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+        val future = MediaController.Builder(this, token).buildAsync()
+        controllerFuture = future
+        future.addListener(
+            {
+                if (future.isCancelled) return@addListener
+                try {
+                    app.playback.controller = future.get()
+                } catch (_: Exception) {
+                }
+            },
+            ContextCompat.getMainExecutor(this),
+        )
+    }
+
+    private fun disconnectController(app: MiniAbsApplication) {
+        app.playback.controller = null
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        controllerFuture = null
     }
 
     private fun applyDebugExtras(app: MiniAbsApplication) {

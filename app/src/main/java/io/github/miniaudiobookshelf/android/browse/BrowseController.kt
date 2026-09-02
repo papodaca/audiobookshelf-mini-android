@@ -7,6 +7,7 @@ import io.github.miniaudiobookshelf.core.Library
 import io.github.miniaudiobookshelf.core.LibraryItem
 import io.github.miniaudiobookshelf.core.PlaybackQueue
 import io.github.miniaudiobookshelf.core.PlaybackStarter
+import io.github.miniaudiobookshelf.core.QueueAppendResult
 import io.github.miniaudiobookshelf.core.QueueEntry
 import io.github.miniaudiobookshelf.core.SettingsStore
 import io.github.miniaudiobookshelf.core.ViewLogic
@@ -129,13 +130,64 @@ class BrowseController(
     }
 
     fun enqueue(episode: LibraryItem, show: LibraryItem) {
-        queue.append(
+        val result = queue.append(
             QueueEntry(
                 itemId = show.id.ifEmpty { episode.id },
                 episodeId = episode.episodeId,
                 title = ViewLogic.episodeLabel(episode),
                 showTitle = show.title.ifEmpty { episode.author },
             ),
+            currentItemId = playback.playingItemId(),
+            currentEpisodeId = playback.playingEpisodeId(),
+        )
+        val notice = when (result) {
+            QueueAppendResult.ADDED -> "Added to Up next"
+            QueueAppendResult.DUPLICATE -> "Already in Up next"
+            QueueAppendResult.CURRENT -> "That's already playing"
+            QueueAppendResult.IGNORED -> null
+        }
+        if (notice != null) {
+            _ui.update { it.copy(notice = notice) }
+        }
+    }
+
+    fun dismissNotice() {
+        _ui.update { it.copy(notice = null) }
+    }
+
+    fun playQueued(index: Int) {
+        val entry = queue.takeAt(index) ?: return
+        playEntry(entry)
+    }
+
+    fun removeQueued(index: Int) {
+        queue.removeAt(index)
+    }
+
+    fun moveQueued(from: Int, to: Int) {
+        queue.move(from, to)
+    }
+
+    fun clearQueue() {
+        queue.clear()
+    }
+
+    fun playNextQueued(): Boolean {
+        val entry = queue.popFront() ?: return false
+        playEntry(entry)
+        return true
+    }
+
+    private fun playEntry(entry: QueueEntry) {
+        playback.play(
+            LibraryItem(
+                id = entry.itemId,
+                episodeId = entry.episodeId,
+                title = entry.title,
+                author = entry.showTitle,
+            ),
+            episodeId = entry.episodeId.ifEmpty { null },
+            startOver = false,
         )
     }
 
@@ -218,4 +270,5 @@ data class BrowseUi(
     val detail: LibraryItem? = null,
     val detailEpisodeId: String = "",
     val newestFirst: Boolean = true,
+    val notice: String? = null,
 )

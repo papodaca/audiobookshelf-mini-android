@@ -2,6 +2,8 @@ package io.github.miniaudiobookshelf.android.player
 
 import android.content.Intent
 import androidx.core.content.ContextCompat
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.session.MediaController
 import io.github.miniaudiobookshelf.android.MiniAbsApplication
 import io.github.miniaudiobookshelf.core.LibraryItem
 import io.github.miniaudiobookshelf.core.PlaybackStarter
@@ -18,11 +20,14 @@ class PlaybackCommands(
     var engine: PlaybackEngine? = null
         private set
 
+    @Volatile
+    var controller: MediaController? = null
+
+    var onLibraryInvalidated: (() -> Unit)? = null
+
     fun attach(engine: PlaybackEngine) {
         this.engine = engine
     }
-
-    var onLibraryInvalidated: (() -> Unit)? = null
 
     override fun notifyLibraryChanged() {
         onLibraryInvalidated?.invoke()
@@ -39,18 +44,62 @@ class PlaybackCommands(
     override fun playAt(item: LibraryItem, episodeId: String?, bookTime: Double) {
         val current = stateFlow.value
         if (current.itemId == item.id && current.intended != IntendedState.STOPPED) {
-            engine?.seekBookTime(bookTime) ?: startPlay(item.id, episodeId, bookTime)
+            seekTo(bookTime)
         } else {
             startPlay(item.id, episodeId, bookTime)
         }
     }
 
     override fun seekTo(bookTime: Double) {
-        engine?.seekBookTime(bookTime)
+        val bound = controller
+        if (bound != null) {
+            bound.seekTo((bookTime * 1000.0).toLong().coerceAtLeast(0L))
+        } else {
+            engine?.seekBookTime(bookTime)
+        }
     }
 
     override fun skip(deltaSeconds: Double) {
-        engine?.skip(deltaSeconds)
+        val bound = controller
+        if (bound != null) {
+            if (deltaSeconds < 0) bound.seekBack() else bound.seekForward()
+        } else {
+            engine?.skip(deltaSeconds)
+        }
+    }
+
+    override fun playPause() {
+        val bound = controller
+        if (bound != null) {
+            if (stateFlow.value.intended == IntendedState.PLAYING) bound.pause() else bound.play()
+        } else if (stateFlow.value.intended == IntendedState.PLAYING) {
+            engine?.pause()
+        } else {
+            engine?.resume()
+        }
+    }
+
+    override fun previousChapter() {
+        val bound = controller
+        if (bound != null) bound.seekToPrevious() else engine?.previousChapter()
+    }
+
+    override fun nextChapter() {
+        val bound = controller
+        if (bound != null) bound.seekToNext() else engine?.nextChapter()
+    }
+
+    override fun setRate(rate: Double) {
+        val bound = controller
+        if (bound != null) {
+            bound.setPlaybackParameters(PlaybackParameters(rate.toFloat()))
+        } else {
+            engine?.setRate(rate)
+        }
+    }
+
+    override fun retry() {
+        engine?.retry()
     }
 
     override fun stop() {
@@ -62,12 +111,16 @@ class PlaybackCommands(
         startPlay(itemId, episodeId, startAt)
     }
 
-    fun retry() {
-        engine?.retry()
-    }
+    override fun playingItemId(): String = stateFlow.value.itemId
+
+    override fun playingEpisodeId(): String = stateFlow.value.episodeId
 
     fun resolveConflict(keepLocal: Boolean) {
         engine?.resolveConflict(keepLocal)
+    }
+
+    fun acknowledgeFinished() {
+        engine?.acknowledgeFinished()
     }
 
     fun onSyncConflict(local: Double, server: Double) {

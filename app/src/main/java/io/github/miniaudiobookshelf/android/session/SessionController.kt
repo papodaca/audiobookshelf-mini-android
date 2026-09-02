@@ -24,11 +24,13 @@ import java.security.MessageDigest
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 class SessionController(
     private val settings: SettingsStore,
@@ -70,7 +72,23 @@ class SessionController(
     fun start() {
         ensureDeviceId()
         scope.launch {
-            withContext(Dispatchers.IO) { restore() }
+            val url = settings.getServerUrl()
+            val restored = try {
+                withContext(Dispatchers.IO) {
+                    withTimeout(20_000) { restoreCredentials() }
+                }
+            } catch (_: TimeoutCancellationException) {
+                false
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
+            if (restored) {
+                showSignedIn()
+            } else {
+                _state.value = SessionState.Connect(ConnectUi(url = url))
+            }
         }
     }
 
@@ -184,24 +202,19 @@ class SessionController(
         }
     }
 
-    private suspend fun restore() {
+    fun playNextQueued(): Boolean {
+        return browse?.playNextQueued() == true
+    }
+
+    private suspend fun restoreCredentials(): Boolean {
         val url = settings.getServerUrl()
-        if (url.isEmpty()) {
-            _state.value = SessionState.Connect(ConnectUi())
-            return
-        }
-        try {
-            val parsed = ServerUrl.parse(url)
-            rebuild(parsed)
-            val mgr = credentials
-            if (mgr != null && mgr.restore()) {
-                api?.setTokenProvider(mgr)
-                showSignedIn()
-                return
-            }
-        } catch (_: Exception) {
-        }
-        _state.value = SessionState.Connect(ConnectUi(url = url))
+        if (url.isEmpty()) return false
+        val parsed = ServerUrl.parse(url)
+        rebuild(parsed)
+        val mgr = credentials ?: return false
+        if (!mgr.restore()) return false
+        api?.setTokenProvider(mgr)
+        return true
     }
 
     private suspend fun probeInternal(urlText: String, httpAck: Boolean) {

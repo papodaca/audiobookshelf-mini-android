@@ -8,9 +8,9 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.LibraryResult
-import androidx.media3.session.MediaLibrarySession
+import androidx.media3.session.MediaLibraryService.LibraryParams
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
-import androidx.media3.session.SessionError
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
@@ -39,7 +39,7 @@ class AutoLibraryCallback(
         }
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
             .setAvailableSessionCommands(
-                MediaSession.ConnectionResult.DEFAULT_SESSION_AND_PLAYER_COMMANDS.sessionCommands,
+                MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS,
             )
             .setAvailablePlayerCommands(
                 MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS
@@ -60,12 +60,12 @@ class AutoLibraryCallback(
     override fun onGetLibraryRoot(
         session: MediaLibrarySession,
         browser: MediaSession.ControllerInfo,
-        params: MediaLibrarySession.LibraryParams?,
+        params: LibraryParams?,
     ): ListenableFuture<LibraryResult<MediaItem>> {
         service.noteRootHints(params)
         val extras = Bundle()
         extras.putBoolean(SEARCH_SUPPORTED, true)
-        val rootParams = params ?: MediaLibrarySession.LibraryParams.Builder().setExtras(extras).build()
+        val rootParams = params ?: LibraryParams.Builder().setExtras(extras).build()
         return Futures.immediateFuture(
             LibraryResult.ofItem(toMediaItem(AutoBrowseTree.rootItem()), rootParams),
         )
@@ -77,7 +77,7 @@ class AutoLibraryCallback(
         parentId: String,
         page: Int,
         pageSize: Int,
-        params: MediaLibrarySession.LibraryParams?,
+        params: LibraryParams?,
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
         val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
         service.serviceScope.launch {
@@ -87,7 +87,7 @@ class AutoLibraryCallback(
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (_: Exception) {
-                future.set(LibraryResult.ofError(SessionError.ERROR_BAD_VALUE))
+                future.set(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
             }
         }
         return future
@@ -119,7 +119,7 @@ class AutoLibraryCallback(
         session: MediaLibrarySession,
         browser: MediaSession.ControllerInfo,
         query: String,
-        params: MediaLibrarySession.LibraryParams?,
+        params: LibraryParams?,
     ): ListenableFuture<LibraryResult<Void>> {
         val future = SettableFuture.create<LibraryResult<Void>>()
         service.serviceScope.launch {
@@ -147,7 +147,7 @@ class AutoLibraryCallback(
         query: String,
         page: Int,
         pageSize: Int,
-        params: MediaLibrarySession.LibraryParams?,
+        params: LibraryParams?,
     ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
         val items = if (query == lastSearchQuery) lastSearchItems else emptyList()
         return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(items), params))

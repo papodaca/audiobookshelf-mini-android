@@ -198,6 +198,12 @@ class PlaybackEngine(
         }
     }
 
+    fun acknowledgeFinished() {
+        hop {
+            stateHolder.update { it.copy(finished = false) }
+        }
+    }
+
     fun release() {
         player.removeListener(listener)
         stopPositionTimer()
@@ -294,6 +300,7 @@ class PlaybackEngine(
                 positionSuppressed = false,
                 position = start,
                 chapter = timeline.chapterAt(start),
+                finished = false,
             )
         }
         val items = session.tracks.map { track ->
@@ -496,7 +503,7 @@ class PlaybackEngine(
 
     private fun onEnded() {
         stateHolder.update {
-            it.copy(intended = IntendedState.STOPPED, pipeline = PipelineState.STOPPED)
+            it.copy(intended = IntendedState.STOPPED, pipeline = PipelineState.STOPPED, finished = true)
         }
         scope.launch { closeSession() }
     }

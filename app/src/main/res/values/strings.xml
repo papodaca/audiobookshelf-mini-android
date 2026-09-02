@@ -46,4 +46,17 @@
     <string name="playback_channel">Playback</string>
     <string name="starting_playback">Starting playback</string>
     <string name="auto_sign_in_on_phone">Sign in on your phone to browse your library.</string>
+    <string name="pause">Pause</string>
+    <string name="up_next">Up next</string>
+    <string name="playback_stalled">Playback stalled.</string>
+    <string name="skip_back_30">-30s</string>
+    <string name="skip_forward_30">+30s</string>
+    <string name="previous_chapter">Previous chapter</string>
+    <string name="next_chapter">Next chapter</string>
+    <string name="chapters">Chapters</string>
+    <string name="clear_queue">Clear</string>
+    <string name="queue_empty">Nothing queued.</string>
+    <string name="move_up">Move up</string>
+    <string name="move_down">Move down</string>
+    <string name="remove_from_queue">Remove from queue</string>
 </resources>
