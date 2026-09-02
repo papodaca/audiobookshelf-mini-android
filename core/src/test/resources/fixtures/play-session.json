@@ -1,0 +1,34 @@
+{
+  "id": "sess-abc-123",
+  "userId": "user-1",
+  "libraryId": "lib-books",
+  "libraryItemId": "item-single",
+  "bookId": "book-single",
+  "episodeId": null,
+  "mediaType": "book",
+  "displayTitle": "The Single File Book",
+  "displayAuthor": "Ada Author",
+  "duration": 3600.0,
+  "playMethod": 0,
+  "startTime": 120.5,
+  "currentTime": 120.5,
+  "timeListening": 0,
+  "audioTracks": [
+    {
+      "index": 1,
+      "startOffset": 0,
+      "duration": 3600.0,
+      "title": "book.m4b",
+      "contentUrl": "/public/session/sess-abc-123/track/1",
+      "mimeType": "audio/mp4"
+    }
+  ],
+  "chapters": [
+    { "id": 0, "start": 0, "end": 1800, "title": "Chapter One" },
+    { "id": 1, "start": 1800, "end": 3600, "title": "Chapter Two" }
+  ],
+  "mediaMetadata": {
+    "title": "The Single File Book",
+    "authorName": "Ada Author"
+  }
+}

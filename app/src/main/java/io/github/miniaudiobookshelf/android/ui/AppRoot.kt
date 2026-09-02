@@ -25,12 +25,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.miniaudiobookshelf.android.R
 import io.github.miniaudiobookshelf.android.session.SessionController
 import io.github.miniaudiobookshelf.android.session.SessionState
+import io.github.miniaudiobookshelf.android.player.PlaybackCommands
 import io.github.miniaudiobookshelf.android.ui.connect.ConnectScreen
 import io.github.miniaudiobookshelf.android.ui.session.SignedInScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppRoot(session: SessionController) {
+fun AppRoot(session: SessionController, playback: PlaybackCommands) {
     val darkTheme = isSystemInDarkTheme()
     val colorScheme = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
@@ -73,7 +74,7 @@ fun AppRoot(session: SessionController) {
                     )
                 }
             }
-            is SessionState.SignedIn -> SignedInScreen(session = session, state = current)
+            is SessionState.SignedIn -> SignedInScreen(session = session, state = current, playback = playback)
         }
     }
 }

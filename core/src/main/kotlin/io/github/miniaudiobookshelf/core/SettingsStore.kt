@@ -11,6 +11,12 @@ interface SettingsStore {
     fun setHttpAcknowledged(origin: String, acknowledged: Boolean)
     fun getLibraryId(): String
     fun setLibraryId(value: String)
+    fun getPlaybackRate(): Double
+    fun setPlaybackRate(value: Double)
+    fun getLastItemId(): String
+    fun setLastItemId(value: String)
+    fun getLastEpisodeId(): String
+    fun setLastEpisodeId(value: String)
 }
 
 class MemorySettingsStore : SettingsStore {
@@ -19,6 +25,9 @@ class MemorySettingsStore : SettingsStore {
     private val pins = mutableMapOf<String, String>()
     private val httpAck = mutableSetOf<String>()
     private var libraryId: String = ""
+    private var playbackRate: Double = 1.0
+    private var lastItemId: String = ""
+    private var lastEpisodeId: String = ""
 
     override fun getServerUrl(): String = serverUrl
     override fun setServerUrl(value: String) {
@@ -46,5 +55,23 @@ class MemorySettingsStore : SettingsStore {
 
     override fun setLibraryId(value: String) {
         libraryId = value
+    }
+
+    override fun getPlaybackRate(): Double = playbackRate
+
+    override fun setPlaybackRate(value: Double) {
+        playbackRate = value
+    }
+
+    override fun getLastItemId(): String = lastItemId
+
+    override fun setLastItemId(value: String) {
+        lastItemId = value
+    }
+
+    override fun getLastEpisodeId(): String = lastEpisodeId
+
+    override fun setLastEpisodeId(value: String) {
+        lastEpisodeId = value
     }
 }

@@ -29,6 +29,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -52,4 +53,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.tls)
     implementation(libs.coil.compose)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.session)
+    implementation(libs.androidx.media3.datasource.okhttp)
 }

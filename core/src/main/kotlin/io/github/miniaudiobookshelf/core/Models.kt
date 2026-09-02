@@ -126,6 +126,11 @@ class PlaybackQueue {
 
 interface PlaybackStarter {
     fun play(item: LibraryItem, episodeId: String?, startOver: Boolean)
+    fun playAt(item: LibraryItem, episodeId: String?, bookTime: Double) {}
+    fun seekTo(bookTime: Double) {}
+    fun skip(deltaSeconds: Double) {}
+    fun stop() {}
+    fun notifyLibraryChanged() {}
 }
 
 object Models {
@@ -165,6 +170,28 @@ object Models {
     }
 
     fun parseItem(json: String): LibraryItem = parseItemObject(objectRoot(json))
+
+    fun parsePlaySession(json: String): PlaySession {
+        val root = objectRoot(json)
+        val tracks = (root["audioTracks"] as? JsonArray)?.let(::readTracks).orEmpty()
+        val chapters = (root["chapters"] as? JsonArray)?.let(::readChapters).orEmpty()
+        val metadata = root["mediaMetadata"] as? JsonObject
+        return PlaySession(
+            id = requireString(root, "id"),
+            libraryItemId = optString(root, "libraryItemId"),
+            currentTime = optDouble(root, "currentTime"),
+            duration = optDouble(root, "duration"),
+            playMethod = optInt(root, "playMethod"),
+            tracks = tracks,
+            chapters = chapters,
+            title = optString(root, "displayTitle").ifEmpty {
+                metadata?.let { optString(it, "title") }.orEmpty()
+            },
+            author = optString(root, "displayAuthor").ifEmpty {
+                metadata?.let { optString(it, "authorName") }.orEmpty()
+            },
+        )
+    }
 
     fun parseItemObject(obj: JsonObject): LibraryItem {
         var progress: MediaProgress? = null

@@ -206,4 +206,86 @@ class ApiClientTest {
         assertEquals("Bearer secret-access-token", transport.requests.single().headers["Authorization"])
         assertFalse(transport.requests.single().uri.contains("token"))
     }
+
+    @Test
+    fun playUrlPathAndEpisodePath() {
+        assertEquals("/api/items/item-1/play", ApiClient.playUrlPath("item-1"))
+        assertEquals(
+            "/api/items/item%201/play/ep%202",
+            ApiClient.playUrlPath("item 1", "ep 2"),
+        )
+    }
+
+    @Test
+    fun streamUrlIsPublicAndUncredentialed() {
+        val client = clientWith(FakeTransport(), FakeTokenProvider("secret-access-token"))
+        val url = client.streamUrl("sess-abc-123", 1)
+        assertEquals("https://abs.example.com/public/session/sess-abc-123/track/1", url)
+        assertFalse(url.contains("token"))
+        assertFalse(url.contains("secret-access-token"))
+        assertFalse(url.contains("Authorization"))
+    }
+
+    @Test
+    fun playPostsForceDirectPlayAndDeviceInfo() = runTest {
+        val transport = FakeTransport()
+        transport.enqueue(200, fixture("play-session.json"))
+        val client = clientWith(transport, FakeTokenProvider("secret-access-token"))
+        val session = client.play("item-single", "device-1")
+        assertEquals("sess-abc-123", session.id)
+        val req = transport.requests.single()
+        assertEquals("POST", req.method)
+        assertTrue(req.uri.endsWith("/api/items/item-single/play"))
+        assertEquals("Bearer secret-access-token", req.headers["Authorization"])
+        val body = req.body!!
+        assertTrue(body.contains("\"forceDirectPlay\":true"))
+        assertTrue(body.contains("\"clientName\":\"Mini Audiobookshelf\""))
+        assertTrue(body.contains("\"deviceId\":\"device-1\""))
+    }
+
+    @Test
+    fun playEpisodeUsesNestedPath() = runTest {
+        val transport = FakeTransport()
+        transport.enqueue(200, fixture("play-session.json"))
+        clientWith(transport, FakeTokenProvider("t")).play("item-pod", "device-1", "ep-1")
+        assertTrue(transport.requests.single().uri.endsWith("/api/items/item-pod/play/ep-1"))
+    }
+
+    @Test
+    fun syncAndCloseUseSessionPath() = runTest {
+        val transport = FakeTransport()
+        transport.enqueue(200, "{}")
+        transport.enqueue(200, "{}")
+        val client = clientWith(transport, FakeTokenProvider("t"))
+        client.syncSession("sess-abc-123", 12.5, 3600.0, 10.0)
+        client.closeSession("sess-abc-123")
+        val syncBody = transport.requests[0].body!!
+        assertTrue(transport.requests[0].uri.endsWith("/api/session/sess-abc-123/sync"))
+        assertTrue(syncBody.contains("\"currentTime\":"))
+        assertTrue(syncBody.contains("\"timeListened\":"))
+        assertTrue(transport.requests[1].uri.endsWith("/api/session/sess-abc-123/close"))
+        assertEquals("{}", transport.requests[1].body)
+    }
+
+    @Test
+    fun logLineRedactsSessionIds() {
+        val stream = ApiClient.formatLogLine(
+            "GET",
+            "https://abs.example.com/public/session/sess-abc-123/track/1",
+            emptyMap(),
+        )
+        val sync = ApiClient.formatLogLine(
+            "POST",
+            "https://abs.example.com/api/session/sess-abc-123/sync",
+            emptyMap(),
+        )
+        assertFalse(stream.contains("sess-abc-123"))
+        assertFalse(sync.contains("sess-abc-123"))
+        assertTrue(stream.contains("/public/session/[redacted]/track/1"))
+        assertTrue(sync.contains("/api/session/[redacted]/sync"))
+    }
+}
+
+private fun fixture(name: String): String {
+    return ApiClientTest::class.java.classLoader!!.getResource("fixtures/$name")!!.readText()
 }

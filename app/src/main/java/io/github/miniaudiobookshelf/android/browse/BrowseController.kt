@@ -53,6 +53,7 @@ class BrowseController(
     fun selectLibrary(library: Library) {
         searchJob?.cancel()
         settings.setLibraryId(library.id)
+        playback.notifyLibraryChanged()
         _ui.update { it.copy(selected = library, query = "", error = null, searching = false, searchOpen = false) }
         loadHome(library)
     }
@@ -112,7 +113,10 @@ class BrowseController(
         _ui.update { it.copy(detail = null, detailEpisodeId = "", newestFirst = true, error = null) }
     }
 
-    fun onChapter(@Suppress("UNUSED_PARAMETER") chapter: Chapter) {
+    fun onChapter(chapter: Chapter) {
+        val item = _ui.value.detail ?: return
+        val episodeId = _ui.value.detailEpisodeId.ifEmpty { null }
+        playback.playAt(item, episodeId, chapter.start)
     }
 
     fun toggleEpisodeSort() {

@@ -27,6 +27,9 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
     private var pins: Map<String, String> = emptyMap()
     private var httpAck: Set<String> = emptySet()
     private var libraryId: String = ""
+    private var playbackRate: Double = 1.0
+    private var lastItemId: String = ""
+    private var lastEpisodeId: String = ""
 
     init {
         val prefs = runBlocking { dataStore.data.first() }
@@ -35,6 +38,9 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         httpAck = prefs[HTTP_ACK].orEmpty()
         pins = decodePins(prefs[PINS].orEmpty())
         libraryId = prefs[LIBRARY_ID].orEmpty()
+        playbackRate = prefs[PLAYBACK_RATE]?.toDoubleOrNull()?.coerceIn(0.5, 3.0) ?: 1.0
+        lastItemId = prefs[LAST_ITEM_ID].orEmpty()
+        lastEpisodeId = prefs[LAST_EPISODE_ID].orEmpty()
     }
 
     override fun getServerUrl(): String = synchronized(lock) { serverUrl }
@@ -80,6 +86,28 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         persist { it[LIBRARY_ID] = value }
     }
 
+    override fun getPlaybackRate(): Double = synchronized(lock) { playbackRate }
+
+    override fun setPlaybackRate(value: Double) {
+        val rate = value.coerceIn(0.5, 3.0)
+        synchronized(lock) { playbackRate = rate }
+        persist { it[PLAYBACK_RATE] = rate.toString() }
+    }
+
+    override fun getLastItemId(): String = synchronized(lock) { lastItemId }
+
+    override fun setLastItemId(value: String) {
+        synchronized(lock) { lastItemId = value }
+        persist { it[LAST_ITEM_ID] = value }
+    }
+
+    override fun getLastEpisodeId(): String = synchronized(lock) { lastEpisodeId }
+
+    override fun setLastEpisodeId(value: String) {
+        synchronized(lock) { lastEpisodeId = value }
+        persist { it[LAST_EPISODE_ID] = value }
+    }
+
     private fun persist(mutate: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         scope.launch {
             dataStore.edit(mutate)
@@ -92,6 +120,9 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         private val HTTP_ACK = stringSetPreferencesKey("http_ack_origins")
         private val PINS = stringPreferencesKey("pinned_certificates")
         private val LIBRARY_ID = stringPreferencesKey("library_id")
+        private val PLAYBACK_RATE = stringPreferencesKey("playback_rate")
+        private val LAST_ITEM_ID = stringPreferencesKey("last_item_id")
+        private val LAST_EPISODE_ID = stringPreferencesKey("last_episode_id")
 
         private fun encodePins(pins: Map<String, String>): String {
             val obj = JSONObject()

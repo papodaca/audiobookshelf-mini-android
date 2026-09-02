@@ -1,6 +1,10 @@
 package io.github.miniaudiobookshelf.android.ui.session
 
+import android.Manifest
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,14 +46,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.miniaudiobookshelf.android.R
 import io.github.miniaudiobookshelf.android.browse.BrowseUi
+import io.github.miniaudiobookshelf.android.player.PlaybackCommands
 import io.github.miniaudiobookshelf.android.session.SessionController
 import io.github.miniaudiobookshelf.android.session.SessionState
 import io.github.miniaudiobookshelf.android.ui.browse.DetailScreen
@@ -62,19 +69,48 @@ import io.github.miniaudiobookshelf.core.ViewLogic
 fun SignedInScreen(
     session: SessionController,
     state: SessionState.SignedIn,
+    playback: PlaybackCommands,
     modifier: Modifier = Modifier,
 ) {
     val browse = state.browse
     val ui by browse.ui.collectAsStateWithLifecycle()
+    val player by playback.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     var confirmSignOut by remember { mutableStateOf(false) }
     var showLibraries by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val context = LocalContext.current
+    val notifyPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            val granted = ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                notifyPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
 
     LaunchedEffect(state.toast) {
         val toast = state.toast ?: return@LaunchedEffect
         snackbar.showSnackbar(toast)
         session.dismissToast()
+    }
+
+    LaunchedEffect(player.statusMessage) {
+        val message = player.statusMessage
+        if (message.isNotEmpty()) {
+            snackbar.showSnackbar(message)
+        }
+    }
+
+    LaunchedEffect(player.syncUnhealthy) {
+        if (player.syncUnhealthy) {
+            snackbar.showSnackbar(context.getString(R.string.progress_not_saved))
+        }
     }
 
     BackHandler(enabled = ui.detail != null) {
@@ -176,6 +212,33 @@ fun SignedInScreen(
             dismissButton = {
                 TextButton(onClick = { confirmSignOut = false }) {
                     Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
+    val conflict = player.conflict
+    if (conflict != null) {
+        AlertDialog(
+            onDismissRequest = { playback.resolveConflict(keepLocal = true) },
+            title = { Text(stringResource(R.string.progress_conflict_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.progress_conflict_body,
+                        ViewLogic.formatClock(conflict.localPosition),
+                        ViewLogic.formatClock(conflict.serverPosition),
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { playback.resolveConflict(keepLocal = true) }) {
+                    Text(stringResource(R.string.keep_this_device))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { playback.resolveConflict(keepLocal = false) }) {
+                    Text(stringResource(R.string.take_other_device))
                 }
             },
         )

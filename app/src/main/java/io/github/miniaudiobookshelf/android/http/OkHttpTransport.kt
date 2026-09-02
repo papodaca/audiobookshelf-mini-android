@@ -59,6 +59,14 @@ class OkHttpTransport(
             .build()
     }
 
+    fun mediaClient(): OkHttpClient {
+        return client.newBuilder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .readTimeout(0, TimeUnit.SECONDS)
+            .build()
+    }
+
     override suspend fun send(
         method: String,
         uri: String,

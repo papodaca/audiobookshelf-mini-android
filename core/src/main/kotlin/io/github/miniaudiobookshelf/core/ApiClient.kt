@@ -57,6 +57,34 @@ class ApiClient(
         return send("GET", Models.searchUrlPath(libraryId, query), extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
     }
 
+    fun streamUrl(sessionId: String, index: Int): String {
+        return server.join("/public/session/${UriEscape.escape(sessionId)}/track/$index")
+    }
+
+    suspend fun play(itemId: String, deviceId: String, episodeId: String? = null): PlaySession {
+        val path = playUrlPath(itemId, episodeId)
+        val payload = json.encodeToString(
+            PlayRequest.serializer(),
+            PlayRequest(deviceInfo = PlayDeviceInfo(deviceId = deviceId)),
+        )
+        val body = send("POST", path, extraHeaders = emptyMap(), jsonBody = payload, attachAuth = true)
+        return PlaySession.parse(body)
+    }
+
+    suspend fun syncSession(sessionId: String, currentTime: Double, duration: Double, timeListened: Double) {
+        val path = "/api/session/${UriEscape.escape(sessionId)}/sync"
+        val payload = json.encodeToString(
+            SyncRequest.serializer(),
+            SyncRequest(currentTime = currentTime, duration = duration, timeListened = timeListened),
+        )
+        send("POST", path, extraHeaders = emptyMap(), jsonBody = payload, attachAuth = true)
+    }
+
+    suspend fun closeSession(sessionId: String) {
+        val path = "/api/session/${UriEscape.escape(sessionId)}/close"
+        send("POST", path, extraHeaders = emptyMap(), jsonBody = "{}", attachAuth = true)
+    }
+
     suspend fun probeStatus(): ServerStatus {
         val body = send("GET", "/status", extraHeaders = emptyMap(), jsonBody = null, attachAuth = false)
         val root = parseObject(body, "status")
@@ -187,11 +215,25 @@ class ApiClient(
 
         fun formatLogLine(method: String, uri: String, headers: Map<String, String>): String {
             val builder = StringBuilder()
-            builder.append(method).append(' ').append(uri)
+            builder.append(method).append(' ').append(redactUri(uri))
             for ((name, value) in headers) {
                 builder.append(' ').append(name).append('=').append(redactHeaderValue(name, value))
             }
             return builder.toString()
+        }
+
+        fun redactUri(uri: String): String {
+            return uri
+                .replace(Regex("/public/session/[^/]+/"), "/public/session/[redacted]/")
+                .replace(Regex("/api/session/[^/]+/"), "/api/session/[redacted]/")
+        }
+
+        fun playUrlPath(itemId: String, episodeId: String? = null): String {
+            return if (!episodeId.isNullOrEmpty()) {
+                "/api/items/${UriEscape.escape(itemId)}/play/${UriEscape.escape(episodeId)}"
+            } else {
+                "/api/items/${UriEscape.escape(itemId)}/play"
+            }
         }
 
         private fun parseObject(body: String, label: String): JsonObject {
@@ -211,4 +253,23 @@ class ApiClient(
 private data class LoginBody(
     val username: String,
     val password: String,
+)
+
+@Serializable
+private data class PlayRequest(
+    val deviceInfo: PlayDeviceInfo,
+    val forceDirectPlay: Boolean = true,
+)
+
+@Serializable
+private data class PlayDeviceInfo(
+    val clientName: String = "Mini Audiobookshelf",
+    val deviceId: String,
+)
+
+@Serializable
+private data class SyncRequest(
+    val currentTime: Double,
+    val duration: Double,
+    val timeListened: Double,
 )

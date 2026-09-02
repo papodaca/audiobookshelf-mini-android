@@ -202,4 +202,6 @@ object ViewLogic {
     }
 
     fun searchHits(json: String, mediaType: String): List<LibraryItem> = Models.searchHits(json, mediaType)
+
+    fun clampRate(rate: Double): Double = rate.coerceIn(0.5, 3.0)
 }

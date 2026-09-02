@@ -38,4 +38,12 @@
     <string name="newest_first">Newest first</string>
     <string name="oldest_first">Oldest first</string>
     <string name="back">Back</string>
+    <string name="progress_not_saved">Progress isn\'t being saved.</string>
+    <string name="progress_conflict_title">Progress conflict</string>
+    <string name="progress_conflict_body">This device is at %1$s. Another device is at %2$s.</string>
+    <string name="keep_this_device">Keep this device</string>
+    <string name="take_other_device">Use the other device</string>
+    <string name="playback_channel">Playback</string>
+    <string name="starting_playback">Starting playback</string>
+    <string name="auto_sign_in_on_phone">Sign in on your phone to browse your library.</string>
 </resources>

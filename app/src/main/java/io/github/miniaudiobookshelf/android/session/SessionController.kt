@@ -10,6 +10,8 @@ import io.github.miniaudiobookshelf.core.ConnectDecision
 import io.github.miniaudiobookshelf.core.ConnectFailure
 import io.github.miniaudiobookshelf.core.CredentialManager
 import io.github.miniaudiobookshelf.core.CredentialMode
+import io.github.miniaudiobookshelf.core.DownloadCatalog
+import io.github.miniaudiobookshelf.core.EmptyDownloadCatalog
 import io.github.miniaudiobookshelf.core.LibraryItem
 import io.github.miniaudiobookshelf.core.PlaybackQueue
 import io.github.miniaudiobookshelf.core.PlaybackStarter
@@ -32,6 +34,7 @@ class SessionController(
     private val settings: SettingsStore,
     private val tokenStore: TokenStore,
     private val clock: Clock,
+    private val playback: PlaybackStarter,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val transport = OkHttpTransport(settings)
@@ -42,11 +45,24 @@ class SessionController(
     private var server: ServerUrl? = null
     private var browse: BrowseController? = null
     private val queue = PlaybackQueue()
-    private val playback = object : PlaybackStarter {
-        override fun play(item: LibraryItem, episodeId: String?, startOver: Boolean) {}
-    }
+    var downloads: DownloadCatalog = EmptyDownloadCatalog
 
     fun coverOkHttpClient(): okhttp3.OkHttpClient = transport.imageClient { credentials }
+
+    fun mediaOkHttpClient(): okhttp3.OkHttpClient = transport.mediaClient()
+
+    fun apiClient(): ApiClient? = api
+
+    fun settingsStore(): SettingsStore = settings
+
+    fun deviceId(): String {
+        val mgr = credentials
+        if (mgr != null) return mgr.ensureDeviceId()
+        if (settings.getDeviceId().isEmpty()) {
+            settings.setDeviceId(java.util.UUID.randomUUID().toString())
+        }
+        return settings.getDeviceId()
+    }
 
     private val _state = MutableStateFlow<SessionState>(SessionState.Loading)
     val state: StateFlow<SessionState> = _state
@@ -119,14 +135,46 @@ class SessionController(
 
     fun confirmSignOut() {
         scope.launch {
+            playback.stop()
             try {
                 withContext(Dispatchers.IO) { credentials?.signOut() }
             } catch (_: Exception) {
             }
             val url = server?.normalized ?: settings.getServerUrl()
+            settings.setLastItemId("")
+            settings.setLastEpisodeId("")
             queue.clear()
             browse = null
+            playback.notifyLibraryChanged()
             _state.value = SessionState.Connect(ConnectUi(url = url))
+        }
+    }
+
+    fun applyDebugLaunch(url: String, token: String, itemId: String, pinPem: String?) {
+        if (url.isEmpty() || token.isEmpty() || itemId.isEmpty()) return
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    val parsed = ServerUrl.parse(url)
+                    if (!pinPem.isNullOrEmpty()) {
+                        trust.pin(parsed.origin, pinPem)
+                    }
+                    rebuild(parsed)
+                    val mgr = credentials ?: return@withContext
+                    mgr.signInApiKey(token)
+                    api?.setTokenProvider(mgr)
+                }
+                if (api != null && credentials != null) {
+                    showSignedIn()
+                    playback.play(
+                        LibraryItem(id = itemId),
+                        episodeId = null,
+                        startOver = false,
+                    )
+                }
+            } catch (_: Exception) {
+                showConnectError(ViewLogic.classifyApiError(ApiError.Unauthorized(), apiKeyPath = true), url)
+            }
         }
     }
 
@@ -266,6 +314,7 @@ class SessionController(
             toast = toast,
             browse = controller,
         )
+        playback.notifyLibraryChanged()
     }
 
     private fun showConnectError(
