@@ -12,12 +12,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +44,6 @@ import io.github.miniaudiobookshelf.core.DownloadRecord
 import io.github.miniaudiobookshelf.core.DownloadStatus
 import io.github.miniaudiobookshelf.core.LibraryItem
 import io.github.miniaudiobookshelf.core.MediaProgress
-import io.github.miniaudiobookshelf.core.ViewLogic
 
 @Composable
 fun DownloadsScreen(
@@ -113,94 +117,82 @@ private fun DownloadRow(
 ) {
     val context = LocalContext.current
     val title = row.title.ifEmpty { row.itemId }
+    val headline = if (row.author.isNotEmpty()) "$title - ${row.author}" else title
+    val status = "${statusLabel(row)} - ${byteLabel(row)}"
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpen(row) }
-            .padding(vertical = 12.dp),
+            .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (coverUrl.isNotEmpty()) {
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(coverUrl)
                     .crossfade(true)
-                    .size(160)
+                    .size(128)
                     .build(),
                 contentDescription = title,
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(6.dp)),
                 contentScale = ContentScale.Crop,
             )
         } else {
             Surface(
-                modifier = Modifier.size(56.dp),
-                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(6.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
             ) {}
         }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 2,
+                text = headline,
+                style = MaterialTheme.typography.bodyLarge,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (row.author.isNotEmpty()) {
-                Text(
-                    text = row.author,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(statusLabel(row), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             if (row.status == DownloadStatus.RUNNING || row.status == DownloadStatus.QUEUED) {
                 val progress = if (row.bytesTotal > 0) row.bytesDownloaded.toFloat() / row.bytesTotal.toFloat() else 0f
-                LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
-            } else if (row.status == DownloadStatus.COMPLETE && (row.currentTime > 0 || row.isFinished)) {
-                val item = row.toLibraryItem()
                 LinearProgressIndicator(
-                    progress = { ViewLogic.progressFraction(item).toFloat() },
-                    modifier = Modifier.fillMaxWidth(),
+                    progress = { progress.coerceIn(0f, 1f) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
                 )
-                val summary = ViewLogic.progressSummary(item)
-                if (summary != null) {
-                    Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        when (row.status) {
+            DownloadStatus.QUEUED, DownloadStatus.RUNNING -> {
+                IconButton(onClick = { downloads.pause(row.itemId, row.episodeId) }) {
+                    Icon(Icons.Filled.Pause, contentDescription = stringResource(R.string.pause))
+                }
+                IconButton(onClick = { downloads.cancel(row.itemId, row.episodeId) }) {
+                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete_download))
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                when (row.status) {
-                    DownloadStatus.QUEUED, DownloadStatus.RUNNING -> {
-                        TextButton(onClick = { downloads.pause(row.itemId, row.episodeId) }) {
-                            Text(stringResource(R.string.pause))
-                        }
-                        TextButton(onClick = { downloads.cancel(row.itemId, row.episodeId) }) {
-                            Text(stringResource(R.string.cancel))
-                        }
-                    }
-                    DownloadStatus.PAUSED, DownloadStatus.FAILED -> {
-                        TextButton(onClick = { downloads.retry(row.itemId, row.episodeId) }) {
-                            Text(stringResource(R.string.retry))
-                        }
-                        TextButton(onClick = { downloads.delete(row.itemId, row.episodeId) }) {
-                            Text(stringResource(R.string.delete_download))
-                        }
-                    }
-                    DownloadStatus.COMPLETE -> {
-                        TextButton(onClick = { downloads.delete(row.itemId, row.episodeId) }) {
-                            Text(stringResource(R.string.delete_download))
-                        }
-                    }
+            DownloadStatus.PAUSED, DownloadStatus.FAILED -> {
+                IconButton(onClick = { downloads.retry(row.itemId, row.episodeId) }) {
+                    Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.retry))
+                }
+                IconButton(onClick = { downloads.delete(row.itemId, row.episodeId) }) {
+                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete_download))
                 }
             }
-            Text(byteLabel(row), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            DownloadStatus.COMPLETE -> {
+                IconButton(onClick = { downloads.delete(row.itemId, row.episodeId) }) {
+                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete_download))
+                }
+            }
         }
     }
 }
