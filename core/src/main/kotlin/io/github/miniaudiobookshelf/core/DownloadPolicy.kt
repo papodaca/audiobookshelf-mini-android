@@ -27,6 +27,8 @@ object DownloadPolicy {
         }
     }
 
+    fun fallbackToOffline(mode: PlayMode): Boolean = mode == PlayMode.LIVE_LOCAL
+
     fun canDownload(canDownloadPermission: Boolean, hasFiles: Boolean): Boolean {
         return canDownloadPermission && hasFiles
     }

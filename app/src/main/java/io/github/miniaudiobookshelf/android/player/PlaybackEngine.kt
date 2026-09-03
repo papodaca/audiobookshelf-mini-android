@@ -255,9 +255,22 @@ class PlaybackEngine(
                 }
             }
             val reachable = reachability?.isReachable() ?: true
-            when (DownloadPolicy.playMode(complete, reachable)) {
-                DownloadPolicy.PlayMode.LIVE_LOCAL, DownloadPolicy.PlayMode.LIVE_STREAM ->
-                    openSession(itemId, episodeId, startOverride, useLocal = complete)
+            val mode = DownloadPolicy.playMode(complete, reachable)
+            when (mode) {
+                DownloadPolicy.PlayMode.LIVE_LOCAL, DownloadPolicy.PlayMode.LIVE_STREAM -> {
+                    try {
+                        openSession(itemId, episodeId, startOverride, useLocal = complete)
+                    } catch (e: PlaybackError.TranscodeOnly) {
+                        if (!DownloadPolicy.fallbackToOffline(mode)) throw e
+                        openOffline(itemId, episodeId, startOverride)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        if (!DownloadPolicy.fallbackToOffline(mode)) throw e
+                        android.util.Log.w(TAG, "live session failed, playing download for item $itemId")
+                        openOffline(itemId, episodeId, startOverride)
+                    }
+                }
                 DownloadPolicy.PlayMode.OFFLINE_LOCAL ->
                     openOffline(itemId, episodeId, startOverride)
                 DownloadPolicy.PlayMode.CANNOT_PLAY -> hopWait {

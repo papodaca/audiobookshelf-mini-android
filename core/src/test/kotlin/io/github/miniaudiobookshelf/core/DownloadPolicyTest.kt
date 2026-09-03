@@ -71,6 +71,14 @@ class DownloadPolicyTest {
     }
 
     @Test
+    fun liveLocalFallsBackToOfflineWhenSessionFails() {
+        assertTrue(DownloadPolicy.fallbackToOffline(DownloadPolicy.PlayMode.LIVE_LOCAL))
+        assertFalse(DownloadPolicy.fallbackToOffline(DownloadPolicy.PlayMode.LIVE_STREAM))
+        assertFalse(DownloadPolicy.fallbackToOffline(DownloadPolicy.PlayMode.OFFLINE_LOCAL))
+        assertFalse(DownloadPolicy.fallbackToOffline(DownloadPolicy.PlayMode.CANNOT_PLAY))
+    }
+
+    @Test
     fun resolverUsesAllLocalOrAllStream() {
         val local = listOf("file:///a/1", "file:///a/2")
         val stream = listOf("https://abs/t/0", "https://abs/t/1")
