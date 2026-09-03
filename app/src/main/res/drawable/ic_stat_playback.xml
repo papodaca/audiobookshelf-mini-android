@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <!-- GTK symbolic mark: four spines on a shelf. White so the system can tint it. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M2.5,6h1a0.5,0.5 0 0 1 0.5,0.5v6a0.5,0.5 0 0 1 -0.5,0.5h-1a0.5,0.5 0 0 1 -0.5,-0.5v-6a0.5,0.5 0 0 1 0.5,-0.5z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M5.5,3h2a0.5,0.5 0 0 1 0.5,0.5v9a0.5,0.5 0 0 1 -0.5,0.5h-2a0.5,0.5 0 0 1 -0.5,-0.5v-9a0.5,0.5 0 0 1 0.5,-0.5z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M9.5,5h1a0.5,0.5 0 0 1 0.5,0.5v7a0.5,0.5 0 0 1 -0.5,0.5h-1a0.5,0.5 0 0 1 -0.5,-0.5v-7a0.5,0.5 0 0 1 0.5,-0.5z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12.5,4h1a0.5,0.5 0 0 1 0.5,0.5v8a0.5,0.5 0 0 1 -0.5,0.5h-1a0.5,0.5 0 0 1 -0.5,-0.5v-8a0.5,0.5 0 0 1 0.5,-0.5z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M1,14a1,1 0 0 1 1,-1h12a1,1 0 0 1 1,1a1,1 0 0 1 -1,1h-12a1,1 0 0 1 -1,-1z" />
+</vector>

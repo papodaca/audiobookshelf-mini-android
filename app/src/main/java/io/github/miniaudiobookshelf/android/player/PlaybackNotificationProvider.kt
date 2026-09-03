@@ -24,7 +24,7 @@ class PlaybackNotificationProvider(
     private val appContext = context.applicationContext
 
     init {
-        setSmallIcon(android.R.drawable.ic_media_play)
+        setSmallIcon(R.drawable.ic_stat_playback)
     }
 
     override fun getMediaButtons(
