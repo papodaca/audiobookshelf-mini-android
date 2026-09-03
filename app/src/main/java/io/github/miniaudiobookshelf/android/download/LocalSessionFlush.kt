@@ -18,6 +18,7 @@ class LocalSessionFlush(
     private val scope: CoroutineScope,
 ) {
     private val mutex = Mutex()
+    var afterFlush: suspend () -> Unit = {}
 
     fun flushAsync() {
         scope.launch { flush() }
@@ -26,19 +27,22 @@ class LocalSessionFlush(
     suspend fun flush() {
         mutex.withLock {
             val pending = store.unsynced()
-            if (pending.isEmpty()) return
-            val client = api() ?: return
-            val results = try {
-                withContext(Dispatchers.IO) { client.syncLocalSessions(pending) }
-            } catch (_: ApiError) {
-                return
-            } catch (_: Exception) {
-                return
+            if (pending.isNotEmpty()) {
+                val client = api() ?: return@withLock
+                val results = try {
+                    withContext(Dispatchers.IO) { client.syncLocalSessions(pending) }
+                } catch (_: ApiError) {
+                    emptyList()
+                } catch (_: Exception) {
+                    emptyList()
+                }
+                if (results.isNotEmpty()) {
+                    val ok = results.filter { it.success }.map { it.id }.toSet()
+                    store.markSynced(ok)
+                }
             }
-            if (results.isEmpty()) return
-            val ok = results.filter { it.success }.map { it.id }.toSet()
-            store.markSynced(ok)
         }
+        afterFlush()
     }
 }
 

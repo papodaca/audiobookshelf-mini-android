@@ -38,6 +38,8 @@ import io.github.miniaudiobookshelf.android.download.DownloadController
 import io.github.miniaudiobookshelf.core.DownloadRecord
 import io.github.miniaudiobookshelf.core.DownloadStatus
 import io.github.miniaudiobookshelf.core.LibraryItem
+import io.github.miniaudiobookshelf.core.MediaProgress
+import io.github.miniaudiobookshelf.core.ViewLogic
 
 @Composable
 fun DownloadsScreen(
@@ -162,6 +164,16 @@ private fun DownloadRow(
             if (row.status == DownloadStatus.RUNNING || row.status == DownloadStatus.QUEUED) {
                 val progress = if (row.bytesTotal > 0) row.bytesDownloaded.toFloat() / row.bytesTotal.toFloat() else 0f
                 LinearProgressIndicator(progress = { progress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+            } else if (row.status == DownloadStatus.COMPLETE && (row.currentTime > 0 || row.isFinished)) {
+                val item = row.toLibraryItem()
+                LinearProgressIndicator(
+                    progress = { ViewLogic.progressFraction(item).toFloat() },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                val summary = ViewLogic.progressSummary(item)
+                if (summary != null) {
+                    Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (row.status) {
@@ -221,10 +233,26 @@ private fun formatBytes(bytes: Long): String {
     return String.format("%.2f GB", mb / 1024.0)
 }
 
-fun DownloadRecord.toLibraryItem(): LibraryItem = LibraryItem(
-    id = itemId,
-    episodeId = episodeId,
-    title = title,
-    author = author,
-    numTracks = if (complete) 1 else 0,
-)
+fun DownloadRecord.toLibraryItem(): LibraryItem {
+    val progress = if (currentTime > 0 || isFinished) {
+        MediaProgress(
+            libraryItemId = itemId,
+            episodeId = episodeId,
+            duration = duration,
+            currentTime = currentTime,
+            isFinished = isFinished,
+            progress = if (duration > 0) (currentTime / duration).coerceIn(0.0, 1.0) else 0.0,
+        )
+    } else {
+        null
+    }
+    return LibraryItem(
+        id = itemId,
+        episodeId = episodeId,
+        title = title,
+        author = author,
+        numTracks = if (complete) 1 else 0,
+        duration = duration,
+        progress = progress,
+    )
+}

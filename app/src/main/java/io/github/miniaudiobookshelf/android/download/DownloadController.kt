@@ -2,14 +2,19 @@ package io.github.miniaudiobookshelf.android.download
 
 import android.content.Context
 import androidx.work.ExistingWorkPolicy
+import io.github.miniaudiobookshelf.core.ApiClient
 import io.github.miniaudiobookshelf.core.DownloadRecord
 import io.github.miniaudiobookshelf.core.DownloadStatus
 import io.github.miniaudiobookshelf.core.LibraryItem
+import io.github.miniaudiobookshelf.core.MemoryDownloadCatalog
 import io.github.miniaudiobookshelf.core.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 
 class DownloadController(
@@ -20,6 +25,8 @@ class DownloadController(
     private val canDownload: () -> Boolean,
 ) {
     val records: StateFlow<List<DownloadRecord>> = repository.records
+    private val progressMutex = Mutex()
+    private var lastProgressRefreshAt = 0L
 
     fun record(itemId: String, episodeId: String): DownloadRecord? = repository.record(itemId, episodeId)
 
@@ -89,6 +96,27 @@ class DownloadController(
                 if (repository.fetchCover(client, url, row.itemId, row.episodeId)) {
                     repository.upsert(row.copy(updatedAt = System.currentTimeMillis()))
                 }
+            }
+        }
+    }
+
+    suspend fun refreshProgress(api: ApiClient, sessions: LocalSessionStore) {
+        progressMutex.withLock {
+            val complete = repository.records.value.filter { it.complete }
+            if (complete.isEmpty()) return
+            val now = System.currentTimeMillis()
+            if (now - lastProgressRefreshAt < 15_000) return
+            val all = try {
+                withContext(Dispatchers.IO) { api.fetchAllProgress() }
+            } catch (_: Exception) {
+                return
+            }
+            lastProgressRefreshAt = now
+            val byKey = all.associateBy { MemoryDownloadCatalog.catalogKey(it.libraryItemId, it.episodeId) }
+            for (row in complete) {
+                val progress = byKey[MemoryDownloadCatalog.catalogKey(row.itemId, row.episodeId)] ?: continue
+                repository.cacheProgress(progress)
+                sessions.applyServerProgress(row.itemId, row.episodeId, progress.currentTime, progress.duration, now)
             }
         }
     }

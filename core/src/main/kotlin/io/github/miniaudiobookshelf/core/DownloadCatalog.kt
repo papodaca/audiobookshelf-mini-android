@@ -30,6 +30,9 @@ data class DownloadRecord(
     val waitingUnmetered: Boolean = false,
     val error: String = "",
     val updatedAt: Long = 0,
+    val currentTime: Double = 0.0,
+    val duration: Double = 0.0,
+    val isFinished: Boolean = false,
 ) {
     val complete: Boolean get() = status == DownloadStatus.COMPLETE
 
@@ -71,6 +74,10 @@ data class DownloadSidecar(
     val tracks: List<SidecarTrack> = emptyList(),
     val chapters: List<SidecarChapter> = emptyList(),
     val coverFileName: String = "cover.jpg",
+    val currentTime: Double = 0.0,
+    val duration: Double = 0.0,
+    val isFinished: Boolean = false,
+    val progressUpdatedAt: Long = 0,
 ) {
     fun timeline(): BookTimeline {
         val audio = tracks.map { track ->

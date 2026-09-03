@@ -29,6 +29,7 @@ data class MediaProgress(
     val progress: Double = 0.0,
     val currentTime: Double = 0.0,
     val isFinished: Boolean = false,
+    val lastUpdate: Long = 0,
 )
 
 data class AudioTrack(
@@ -366,7 +367,30 @@ object Models {
             progress = optDouble(obj, "progress"),
             currentTime = optDouble(obj, "currentTime"),
             isFinished = optBool(obj, "isFinished"),
+            lastUpdate = optLong(obj, "lastUpdate"),
         )
+    }
+
+    fun parseProgressList(json: String): List<MediaProgress> {
+        val element = try {
+            ApiClient.json.parseToJsonElement(json)
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        val array = when (element) {
+            is JsonArray -> element
+            is JsonObject -> {
+                (element["mediaProgress"] as? JsonArray)
+                    ?: (element["progress"] as? JsonArray)
+                    ?: return if (element.containsKey("libraryItemId") || element.containsKey("currentTime")) {
+                        listOf(parseProgress(element))
+                    } else {
+                        emptyList()
+                    }
+            }
+            else -> return emptyList()
+        }
+        return array.mapNotNull { el -> (el as? JsonObject)?.let(::parseProgress) }
     }
 
     fun searchHits(json: String, mediaType: String): List<LibraryItem> {

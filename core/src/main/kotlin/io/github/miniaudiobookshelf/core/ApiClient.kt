@@ -21,6 +21,11 @@ class ApiClient(
         return server.join("/api/items/${UriEscape.escape(itemId)}/cover?format=jpeg&ts=$ts")
     }
 
+    suspend fun fetchAllProgress(): List<MediaProgress> {
+        val body = send("GET", "/api/me/progress", extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
+        return Models.parseProgressList(body)
+    }
+
     suspend fun fetchLibraries(): LibraryList {
         val body = send("GET", "/api/libraries", extraHeaders = emptyMap(), jsonBody = null, attachAuth = true)
         return Models.parseLibraryList(body)

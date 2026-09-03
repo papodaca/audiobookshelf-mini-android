@@ -348,11 +348,17 @@ class PlaybackEngine(
             return
         }
         val stored = localSessions?.get(itemId, episodeId.orEmpty())
-        val start = when {
-            startOverride >= 0 -> startOverride
-            stored != null -> stored.currentTime
-            else -> 0.0
+        val unsyncedTime = if (localSessions?.hasUnsynced(itemId, episodeId.orEmpty()) == true) {
+            stored?.currentTime
+        } else {
+            null
         }
+        val start = DownloadPolicy.offlineStart(
+            startOverride = startOverride,
+            unsyncedLocalTime = unsyncedTime,
+            sidecar = sidecar,
+            storedTime = stored?.currentTime,
+        )
         val now = System.currentTimeMillis()
         val local = LocalPlaybackSession(
             id = stored?.id ?: LocalPlaybackSession.newId(),

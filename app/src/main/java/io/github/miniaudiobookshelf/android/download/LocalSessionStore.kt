@@ -21,6 +21,32 @@ class LocalSessionStore(context: Context) {
         }
     }
 
+    fun hasUnsynced(itemId: String, episodeId: String): Boolean = synchronized(lock) {
+        load().any { row ->
+            !row.synced && row.session.libraryItemId == itemId && (row.session.episodeId ?: "") == episodeId
+        }
+    }
+
+    fun applyServerProgress(itemId: String, episodeId: String, currentTime: Double, duration: Double, now: Long) {
+        synchronized(lock) {
+            val rows = load().toMutableList()
+            val index = rows.indexOfLast { row ->
+                row.session.libraryItemId == itemId && (row.session.episodeId ?: "") == episodeId
+            }
+            if (index < 0 || !rows[index].synced) return
+            val current = rows[index].session
+            rows[index] = rows[index].copy(
+                session = current.copy(
+                    currentTime = currentTime,
+                    duration = if (duration > 0) duration else current.duration,
+                    updatedAt = now,
+                ),
+                synced = true,
+            )
+            save(rows)
+        }
+    }
+
     fun upsert(session: LocalPlaybackSession) {
         synchronized(lock) {
             val rows = load().toMutableList()

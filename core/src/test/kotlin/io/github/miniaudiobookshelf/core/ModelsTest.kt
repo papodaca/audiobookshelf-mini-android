@@ -182,4 +182,24 @@ class ModelsTest {
         assertEquals(books, ViewLogic.pickLibrary(listOf(books, pods), "gone"))
         assertNull(ViewLogic.pickLibrary(emptyList(), "lib-books"))
     }
+
+    @Test
+    fun progressListParsesArrayAndLastUpdate() {
+        val json = """
+            [
+              {"libraryItemId":"item-1","episodeId":"","currentTime":90,"duration":300,"progress":0.3,"isFinished":false,"lastUpdate":1700000000000},
+              {"libraryItemId":"show","episodeId":"ep-1","currentTime":15,"duration":60,"isFinished":false}
+            ]
+        """.trimIndent()
+        val rows = Models.parseProgressList(json)
+        assertEquals(2, rows.size)
+        assertEquals("item-1", rows[0].libraryItemId)
+        assertEquals(90.0, rows[0].currentTime)
+        assertEquals(1_700_000_000_000L, rows[0].lastUpdate)
+        assertEquals("ep-1", rows[1].episodeId)
+        val wrapped = Models.parseProgressList("""{"mediaProgress":[{"libraryItemId":"item-2","currentTime":8}]}""")
+        assertEquals(1, wrapped.size)
+        assertEquals("item-2", wrapped[0].libraryItemId)
+        assertEquals(8.0, wrapped[0].currentTime)
+    }
 }

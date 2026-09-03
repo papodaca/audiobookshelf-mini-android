@@ -175,6 +175,7 @@ class DownloadWorker(
             )
         }
         repo.fetchCover(app.session.coverOkHttpClient(), api.coverUrl(itemId), itemId, episodeId)
+        val progress = target.progress ?: item.progress
         val sidecar = DownloadSidecar(
             itemId = itemId,
             episodeId = episodeId,
@@ -196,25 +197,33 @@ class DownloadWorker(
                 SidecarChapter(id = chapter.id, start = chapter.start, end = chapter.end, title = chapter.title)
             },
             coverFileName = DownloadRepository.COVER_NAME,
+            currentTime = progress?.currentTime ?: 0.0,
+            duration = progress?.duration ?: 0.0,
+            isFinished = progress?.isFinished == true,
+            progressUpdatedAt = progress?.lastUpdate ?: 0L,
         )
+        val sidecarWithDuration = if (sidecar.duration > 0) sidecar else sidecar.copy(duration = sidecar.timeline().totalDuration)
         val sidecarFile = repo.sidecarFile(itemId, episodeId)
-        sidecarFile.writeText(DownloadSidecarJson.encode(sidecar))
-        val sizes = sidecar.tracks.associate { it.fileName to repo.audioFile(itemId, episodeId, it.index).length() }
-        if (!DownloadPolicy.canPlayOffline(sidecar, sizes)) {
+        sidecarFile.writeText(DownloadSidecarJson.encode(sidecarWithDuration))
+        val sizes = sidecarWithDuration.tracks.associate { it.fileName to repo.audioFile(itemId, episodeId, it.index).length() }
+        if (!DownloadPolicy.canPlayOffline(sidecarWithDuration, sizes)) {
             return fail(repo, itemId, episodeId, "Downloaded files did not match")
         }
         upsert(
             repo,
             itemId,
             episodeId,
-            sidecar.title,
-            sidecar.author,
+            sidecarWithDuration.title,
+            sidecarWithDuration.author,
             DownloadStatus.COMPLETE,
-            sidecar.tracks.sumOf { it.byteSize },
-            sidecar.tracks.sumOf { it.byteSize },
+            sidecarWithDuration.tracks.sumOf { it.byteSize },
+            sidecarWithDuration.tracks.sumOf { it.byteSize },
             false,
             "",
             sidecarFile.absolutePath,
+            currentTime = sidecarWithDuration.currentTime,
+            duration = sidecarWithDuration.duration,
+            isFinished = sidecarWithDuration.isFinished,
         )
         return Result.success()
     }
@@ -231,6 +240,9 @@ class DownloadWorker(
         waiting: Boolean,
         error: String,
         sidecarPath: String = repo.sidecarFile(itemId, episodeId).absolutePath,
+        currentTime: Double = 0.0,
+        duration: Double = 0.0,
+        isFinished: Boolean = false,
     ) {
         repo.upsert(
             DownloadRecord(
@@ -245,6 +257,9 @@ class DownloadWorker(
                 waitingUnmetered = waiting,
                 error = error,
                 updatedAt = System.currentTimeMillis(),
+                currentTime = currentTime,
+                duration = duration,
+                isFinished = isFinished,
             ),
         )
     }

@@ -11,6 +11,7 @@ import io.github.miniaudiobookshelf.core.DownloadSidecar
 import io.github.miniaudiobookshelf.core.DownloadSidecarJson
 import io.github.miniaudiobookshelf.core.DownloadStatus
 import io.github.miniaudiobookshelf.core.LibraryItem
+import io.github.miniaudiobookshelf.core.MediaProgress
 import io.github.miniaudiobookshelf.core.MemoryDownloadCatalog
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,7 +32,10 @@ class DownloadRepository(
         get() = File(context.getExternalFilesDir(null), "abs-downloads")
 
     suspend fun hydrate() {
-        cache.value = dao.all().map { it.toRecord() }
+        cache.value = dao.all().map { entity ->
+            val row = entity.toRecord()
+            row.mergeProgress(sidecar(row.itemId, row.episodeId))
+        }
     }
 
     fun dirFor(itemId: String, episodeId: String): File {
@@ -79,6 +83,33 @@ class DownloadRepository(
         } catch (_: Exception) {
             false
         }
+    }
+
+    fun cacheProgress(progress: MediaProgress) {
+        val sidecar = sidecar(progress.libraryItemId, progress.episodeId) ?: return
+        val updated = sidecar.copy(
+            currentTime = progress.currentTime,
+            duration = if (progress.duration > 0) progress.duration else sidecar.duration,
+            isFinished = progress.isFinished,
+            progressUpdatedAt = if (progress.lastUpdate > 0) progress.lastUpdate else System.currentTimeMillis(),
+        )
+        writeSidecar(updated)
+        val row = record(progress.libraryItemId, progress.episodeId) ?: return
+        cache.update { current ->
+            current.map { item ->
+                if (item.itemId == row.itemId && item.episodeId == row.episodeId) {
+                    item.mergeProgress(updated)
+                } else {
+                    item
+                }
+            }
+        }
+    }
+
+    fun writeSidecar(sidecar: DownloadSidecar) {
+        val file = sidecarFile(sidecar.itemId, sidecar.episodeId)
+        file.parentFile?.mkdirs()
+        file.writeText(DownloadSidecarJson.encode(sidecar))
     }
 
     suspend fun upsert(record: DownloadRecord) {
@@ -163,6 +194,15 @@ class DownloadRepository(
         const val SIDECAR_NAME = "sidecar.json"
         const val COVER_NAME = "cover.jpg"
     }
+}
+
+private fun DownloadRecord.mergeProgress(sidecar: DownloadSidecar?): DownloadRecord {
+    if (sidecar == null) return this
+    return copy(
+        currentTime = sidecar.currentTime,
+        duration = sidecar.duration,
+        isFinished = sidecar.isFinished,
+    )
 }
 
 private fun DownloadRecord.toEntity(): DownloadEntity = DownloadEntity(

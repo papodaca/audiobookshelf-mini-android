@@ -68,6 +68,7 @@ class MiniAbsApplication : Application() {
         )
         val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         localFlush = LocalSessionFlush(localSessions, { session.apiClient() }, appScope)
+        localFlush.afterFlush = { refreshDownloadProgress() }
         reachability = ServerReachability(connectivity, { session.apiClient() })
         NetworkFlushWatcher(connectivity, localFlush).start()
         session.onSignOutDownloads = { delete ->
@@ -90,6 +91,12 @@ class MiniAbsApplication : Application() {
         watchQueueAdvance()
         watchDownloads()
         appScope.launch(Dispatchers.IO) { downloads.hydrate() }
+    }
+
+    private suspend fun refreshDownloadProgress() {
+        if (!session.isSignedIn()) return
+        val api = session.apiClient() ?: return
+        downloadController.refreshProgress(api, localSessions)
     }
 
     private fun watchDownloads() {

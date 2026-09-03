@@ -30,6 +30,25 @@ object DownloadPolicy {
     fun canDownload(canDownloadPermission: Boolean, hasFiles: Boolean): Boolean {
         return canDownloadPermission && hasFiles
     }
+
+    fun hasCachedProgress(sidecar: DownloadSidecar): Boolean {
+        return sidecar.progressUpdatedAt > 0 || sidecar.isFinished || sidecar.currentTime > 0
+    }
+
+    fun offlineStart(
+        startOverride: Double,
+        unsyncedLocalTime: Double?,
+        sidecar: DownloadSidecar,
+        storedTime: Double?,
+    ): Double {
+        if (startOverride >= 0) return startOverride
+        if (unsyncedLocalTime != null) return unsyncedLocalTime
+        if (hasCachedProgress(sidecar)) {
+            if (sidecar.isFinished) return 0.0
+            return sidecar.currentTime
+        }
+        return storedTime ?: 0.0
+    }
 }
 
 object TrackUriResolver {

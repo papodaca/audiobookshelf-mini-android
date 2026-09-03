@@ -94,6 +94,31 @@ class DownloadPolicyTest {
         assertFalse(DownloadPolicy.canDownload(canDownloadPermission = true, hasFiles = false))
         assertTrue(DownloadPolicy.canDownload(canDownloadPermission = true, hasFiles = true))
     }
+
+    @Test
+    fun offlineStartPrefersUnsyncedLocalThenCachedServer() {
+        val cached = sidecar.copy(currentTime = 120.0, duration = 600.0, progressUpdatedAt = 9L)
+        assertEquals(10.0, DownloadPolicy.offlineStart(10.0, unsyncedLocalTime = 50.0, sidecar = cached, storedTime = 1.0))
+        assertEquals(50.0, DownloadPolicy.offlineStart(-1.0, unsyncedLocalTime = 50.0, sidecar = cached, storedTime = 1.0))
+        assertEquals(120.0, DownloadPolicy.offlineStart(-1.0, unsyncedLocalTime = null, sidecar = cached, storedTime = 1.0))
+        assertEquals(1.0, DownloadPolicy.offlineStart(-1.0, unsyncedLocalTime = null, sidecar = sidecar, storedTime = 1.0))
+        assertEquals(0.0, DownloadPolicy.offlineStart(-1.0, unsyncedLocalTime = null, sidecar = sidecar, storedTime = null))
+        val finished = sidecar.copy(currentTime = 600.0, isFinished = true, progressUpdatedAt = 9L)
+        assertEquals(0.0, DownloadPolicy.offlineStart(-1.0, unsyncedLocalTime = null, sidecar = finished, storedTime = 1.0))
+    }
+
+    @Test
+    fun sidecarRoundTripsCachedProgress() {
+        val original = sidecar.copy(currentTime = 42.5, duration = 3600.0, isFinished = false, progressUpdatedAt = 1_700_000_000_000L)
+        val decoded = DownloadSidecarJson.decode(DownloadSidecarJson.encode(original))
+        assertEquals(42.5, decoded.currentTime)
+        assertEquals(3600.0, decoded.duration)
+        assertFalse(decoded.isFinished)
+        assertEquals(1_700_000_000_000L, decoded.progressUpdatedAt)
+        val old = DownloadSidecarJson.decode("""{"itemId":"item-1","title":"Book","tracks":[],"chapters":[]}""")
+        assertEquals(0.0, old.currentTime)
+        assertFalse(old.isFinished)
+    }
 }
 
 class LocalSessionCodecTest {
