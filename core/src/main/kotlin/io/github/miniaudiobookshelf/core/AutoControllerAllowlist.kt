@@ -19,4 +19,11 @@ object AutoControllerAllowlist {
         if (packageName.startsWith("com.google.android.projection")) return true
         return false
     }
+
+    fun isCarHost(packageName: String): Boolean {
+        if (packageName == "com.google.android.gms.car") return true
+        if (packageName == "com.google.android.embedded.projection") return true
+        if (packageName.startsWith("com.google.android.projection")) return true
+        return false
+    }
 }

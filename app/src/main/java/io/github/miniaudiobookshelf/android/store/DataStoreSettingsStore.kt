@@ -27,6 +27,8 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
     private var playbackRate: Double = 1.0
     private var lastItemId: String = ""
     private var lastEpisodeId: String = ""
+    private var lastTitle: String = ""
+    private var lastAuthor: String = ""
     private var allowMeteredDownloads: Boolean = false
 
     init {
@@ -39,6 +41,8 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         playbackRate = prefs[PLAYBACK_RATE]?.toDoubleOrNull()?.coerceIn(0.5, 3.0) ?: 1.0
         lastItemId = prefs[LAST_ITEM_ID].orEmpty()
         lastEpisodeId = prefs[LAST_EPISODE_ID].orEmpty()
+        lastTitle = prefs[LAST_TITLE].orEmpty()
+        lastAuthor = prefs[LAST_AUTHOR].orEmpty()
         allowMeteredDownloads = prefs[ALLOW_METERED] ?: false
     }
 
@@ -107,6 +111,20 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         persist { it[LAST_EPISODE_ID] = value }
     }
 
+    override fun getLastTitle(): String = synchronized(lock) { lastTitle }
+
+    override fun setLastTitle(value: String) {
+        synchronized(lock) { lastTitle = value }
+        persist { it[LAST_TITLE] = value }
+    }
+
+    override fun getLastAuthor(): String = synchronized(lock) { lastAuthor }
+
+    override fun setLastAuthor(value: String) {
+        synchronized(lock) { lastAuthor = value }
+        persist { it[LAST_AUTHOR] = value }
+    }
+
     override fun getAllowMeteredDownloads(): Boolean = synchronized(lock) { allowMeteredDownloads }
 
     override fun setAllowMeteredDownloads(value: Boolean) {
@@ -129,6 +147,8 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         private val PLAYBACK_RATE = stringPreferencesKey("playback_rate")
         private val LAST_ITEM_ID = stringPreferencesKey("last_item_id")
         private val LAST_EPISODE_ID = stringPreferencesKey("last_episode_id")
+        private val LAST_TITLE = stringPreferencesKey("last_title")
+        private val LAST_AUTHOR = stringPreferencesKey("last_author")
         private val ALLOW_METERED = booleanPreferencesKey("allow_metered_downloads")
 
         private fun encodePins(pins: Map<String, String>): String {

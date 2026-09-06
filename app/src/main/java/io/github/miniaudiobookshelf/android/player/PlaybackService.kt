@@ -59,6 +59,7 @@ class PlaybackService : MediaLibraryService() {
     private var artSizePx: Int = DEFAULT_ART_PX
     private var lastCoverUrl: String = ""
     private val coverLoader = CoverArtLoader { app().session.coverOkHttpClient() }
+    private var carSessionGuard: CarSessionGuard? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -80,6 +81,9 @@ class PlaybackService : MediaLibraryService() {
         exo = player
         bookPlayer = sessionPlayer
         mediaSession = session
+        val guard = CarSessionGuard(this) { pauseForCarDisconnect() }
+        carSessionGuard = guard
+        guard.start()
         app().playback.onLibraryInvalidated = { notifyTreeChanged() }
         serviceScope.launch {
             app().playback.state
@@ -127,6 +131,25 @@ class PlaybackService : MediaLibraryService() {
         return AutoControllerAllowlist.isAllowed(controller.packageName, packageName)
     }
 
+    fun isCarController(controller: MediaSession.ControllerInfo): Boolean {
+        val session = mediaSession
+        if (session != null &&
+            (session.isAutoCompanionController(controller) || session.isAutomotiveController(controller))
+        ) {
+            return true
+        }
+        return AutoControllerAllowlist.isCarHost(controller.packageName)
+    }
+
+    fun noteCarController() {
+        carSessionGuard?.markProjection()
+    }
+
+    fun pauseForCarDisconnect() {
+        Log.i(AUTO_TAG, "car disconnected, pause")
+        engine?.pause()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_PLAY) {
             setShowNotificationForIdlePlayer(SHOW_NOTIFICATION_FOR_IDLE_PLAYER_ALWAYS)
@@ -151,6 +174,8 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        carSessionGuard?.stop()
+        carSessionGuard = null
         app().playback.onLibraryInvalidated = null
         val currentEngine = engine
         val driver = syncDriver
@@ -183,6 +208,16 @@ class PlaybackService : MediaLibraryService() {
     }
 
     fun settings(): SettingsStore = app().session.settingsStore()
+
+    fun lastPlayedNode(): AutoNode? {
+        val settings = settings()
+        return AutoBrowseTree.lastPlayed(
+            itemId = settings.getLastItemId(),
+            episodeId = settings.getLastEpisodeId(),
+            title = settings.getLastTitle(),
+            author = settings.getLastAuthor(),
+        )
+    }
 
     fun sendSignInError(session: MediaSession) {
         val extras = Bundle()

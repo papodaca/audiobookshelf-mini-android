@@ -358,8 +358,6 @@ class PlaybackEngine(
             val streamUris = session.tracks.map { api.streamUrl(session.id, it.index) }
             val uris = TrackUriResolver.playlistUris(useLocal, localUris, streamUris)
             attachPlaylist(itemId, episodeId, session.title, session.author, session.tracks, session.chapters, session.currentTime, startOverride, session.id, uris, coverUrl(itemId, episodeId.orEmpty()))
-            settings.setLastItemId(itemId)
-            settings.setLastEpisodeId(episodeId.orEmpty())
         }
     }
 
@@ -427,8 +425,6 @@ class PlaybackEngine(
                 io.github.miniaudiobookshelf.core.Chapter(id = it.id, start = it.start, end = it.end, title = it.title)
             }
             attachPlaylist(itemId, episodeId, sidecar.title, sidecar.author, tracks, chapters, start, start, local.id, uris, coverUrl(itemId, episodeId.orEmpty()))
-            settings.setLastItemId(itemId)
-            settings.setLastEpisodeId(episodeId.orEmpty())
         }
     }
 
@@ -484,6 +480,10 @@ class PlaybackEngine(
                 finished = false,
             )
         }
+        settings.setLastItemId(itemId)
+        settings.setLastEpisodeId(episodeId.orEmpty())
+        settings.setLastTitle(title)
+        settings.setLastAuthor(author)
         val items = sessionTracks.mapIndexed { i, track ->
             val uri = uris.getOrNull(i) ?: uris.getOrNull(0) ?: return@mapIndexed null
             MediaItem.Builder()

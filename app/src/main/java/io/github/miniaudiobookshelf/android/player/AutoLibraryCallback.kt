@@ -42,6 +42,9 @@ class AutoLibraryCallback(
             return MediaSession.ConnectionResult.reject()
         }
         Log.i(PlaybackService.AUTO_TAG, "connect pkg=${controller.packageName} uid=${controller.uid}")
+        if (service.isCarController(controller)) {
+            service.noteCarController()
+        }
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
             .setAvailableSessionCommands(
                 MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
@@ -68,6 +71,20 @@ class AutoLibraryCallback(
             if (!service.isSignedIn()) {
                 service.sendSignInError(session)
             }
+        }
+    }
+
+    override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
+        Log.i(
+            PlaybackService.AUTO_TAG,
+            "disconnect pkg=${controller.packageName} uid=${controller.uid}",
+        )
+        if (!service.isCarController(controller)) return
+        val stillCar = session.connectedControllers.any { other ->
+            other !== controller && service.isCarController(other)
+        }
+        if (!stillCar) {
+            service.pauseForCarDisconnect()
         }
     }
 
@@ -127,7 +144,12 @@ class AutoLibraryCallback(
             MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE,
             MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM,
         )
-        val rootParams = LibraryParams.Builder().setExtras(extras).build()
+        val rootParams = LibraryParams.Builder()
+            .setExtras(extras)
+            .setRecent(params?.isRecent == true)
+            .setOffline(params?.isOffline == true)
+            .setSuggested(params?.isSuggested == true)
+            .build()
         return Futures.immediateFuture(
             LibraryResult.ofItem(toMediaItem(AutoBrowseTree.rootItem()), rootParams),
         )
@@ -144,10 +166,14 @@ class AutoLibraryCallback(
         val future = SettableFuture.create<LibraryResult<ImmutableList<MediaItem>>>()
         service.serviceScope.launch {
             try {
-                val nodes = service.loadChildren(parentId)
+                val nodes = if (params?.isRecent == true) {
+                    listOfNotNull(service.lastPlayedNode()).ifEmpty { service.loadChildren(parentId) }
+                } else {
+                    service.loadChildren(parentId)
+                }
                 Log.i(
                     PlaybackService.AUTO_TAG,
-                    "children parent=$parentId count=${nodes.size} signedIn=${service.isSignedIn()}",
+                    "children parent=$parentId recent=${params?.isRecent} count=${nodes.size} signedIn=${service.isSignedIn()}",
                 )
                 future.set(LibraryResult.ofItemList(ImmutableList.copyOf(nodes.map(::toMediaItem)), params))
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -180,17 +206,22 @@ class AutoLibraryCallback(
     ): ListenableFuture<LibraryResult<MediaItem>> {
         val parsed = AutoMediaId.parse(mediaId)
         val item = when (parsed) {
-            is AutoMediaId.Item -> MediaItem.Builder()
-                .setMediaId(mediaId)
-                .setUri(parsed.playbackUri())
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setIsPlayable(true)
-                        .setIsBrowsable(false)
-                        .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
-                        .build(),
-                )
-                .build()
+            is AutoMediaId.Item -> {
+                val last = service.lastPlayedNode()?.takeIf { it.id == parsed }
+                MediaItem.Builder()
+                    .setMediaId(mediaId)
+                    .setUri(parsed.playbackUri())
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(last?.title)
+                            .setArtist(last?.subtitle?.ifEmpty { null })
+                            .setIsPlayable(true)
+                            .setIsBrowsable(false)
+                            .setMediaType(MediaMetadata.MEDIA_TYPE_AUDIO_BOOK)
+                            .build(),
+                    )
+                    .build()
+            }
             else -> toMediaItem(AutoBrowseTree.rootItem())
         }
         return Futures.immediateFuture(LibraryResult.ofItem(item, null))
@@ -238,25 +269,21 @@ class AutoLibraryCallback(
         mediaSession: MediaSession,
         controller: MediaSession.ControllerInfo,
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
-        val settings = service.settings()
-        val itemId = settings.getLastItemId()
-        if (itemId.isEmpty() || !service.isSignedIn()) {
-            return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(emptyList(), 0, 0))
+        val empty = MediaSession.MediaItemsWithStartPosition(emptyList(), 0, C.TIME_UNSET)
+        if (!service.isSignedIn()) {
+            return Futures.immediateFuture(empty)
         }
-        val episodeId = settings.getLastEpisodeId().ifEmpty { null }
-        val mediaId = AutoMediaId.Item(itemId, episodeId).encode()
-        val item = MediaItem.Builder()
-            .setMediaId(mediaId)
-            .setUri(AutoMediaId.Item(itemId, episodeId).playbackUri())
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setIsPlayable(true)
-                    .setIsBrowsable(false)
-                    .build(),
-            )
-            .build()
+        val node = service.lastPlayedNode()
+        if (node == null) {
+            Log.i(PlaybackService.AUTO_TAG, "resumption empty pkg=${controller.packageName}")
+            return Futures.immediateFuture(empty)
+        }
+        Log.i(
+            PlaybackService.AUTO_TAG,
+            "resumption pkg=${controller.packageName} mediaId=${node.id.encode()} title=${node.title}",
+        )
         return Futures.immediateFuture(
-            MediaSession.MediaItemsWithStartPosition(listOf(item), 0, C.TIME_UNSET),
+            MediaSession.MediaItemsWithStartPosition(listOf(toMediaItem(node)), 0, C.TIME_UNSET),
         )
     }
 

@@ -193,6 +193,8 @@ class SessionController(
             val url = server?.normalized ?: settings.getServerUrl()
             settings.setLastItemId("")
             settings.setLastEpisodeId("")
+            settings.setLastTitle("")
+            settings.setLastAuthor("")
             queue.clear()
             browse = null
             userAccess = UserAccess()

@@ -94,6 +94,17 @@ object AutoBrowseTree {
         AutoNode(AutoMediaId.SignIn, title, browsable = false, playable = true),
     )
 
+    fun lastPlayed(itemId: String, episodeId: String, title: String, author: String): AutoNode? {
+        if (itemId.isEmpty()) return null
+        return AutoNode(
+            id = AutoMediaId.Item(itemId, episodeId.ifEmpty { null }),
+            title = title.ifEmpty { "Now playing" },
+            subtitle = author,
+            browsable = false,
+            playable = true,
+        )
+    }
+
     fun continueChildren(items: List<LibraryItem>): List<AutoNode> {
         return items.mapNotNull { itemNode(it) }
     }

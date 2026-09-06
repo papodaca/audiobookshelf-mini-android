@@ -72,6 +72,17 @@ class AutoBrowseTreeTest {
     }
 
     @Test
+    fun lastPlayedIsPlayableItem() {
+        assertEquals(null, AutoBrowseTree.lastPlayed("", "", "", ""))
+        val node = AutoBrowseTree.lastPlayed("item-1", "ep-2", "Episode", "Show")!!
+        assertEquals(AutoMediaId.Item("item-1", "ep-2"), node.id)
+        assertEquals("Episode", node.title)
+        assertEquals("Show", node.subtitle)
+        assertTrue(node.playable)
+        assertFalse(node.browsable)
+    }
+
+    @Test
     fun continueDropsUnplayable() {
         val playable = LibraryItem(id = "a", title = "A", author = "Ada", numTracks = 1, mediaType = "book")
         val ebook = LibraryItem(id = "b", title = "Ebook", mediaType = "book")
@@ -154,5 +165,17 @@ class AutoControllerAllowlistTest {
         assertTrue(AutoControllerAllowlist.isAllowed("com.google.android.embedded.projection", app))
         assertFalse(AutoControllerAllowlist.isAllowed("com.evil.browser", app))
         assertFalse(AutoControllerAllowlist.isAllowed("", app))
+    }
+
+    @Test
+    fun carHostIsProjectionNotPhoneOrAssistant() {
+        assertTrue(AutoControllerAllowlist.isCarHost("com.google.android.projection.gearhead"))
+        assertTrue(AutoControllerAllowlist.isCarHost("com.google.android.projection.gearhead:car"))
+        assertTrue(AutoControllerAllowlist.isCarHost("com.google.android.gms.car"))
+        assertTrue(AutoControllerAllowlist.isCarHost("com.google.android.embedded.projection"))
+        assertFalse(AutoControllerAllowlist.isCarHost("io.github.miniaudiobookshelf.android"))
+        assertFalse(AutoControllerAllowlist.isCarHost("com.google.android.googlequicksearchbox"))
+        assertFalse(AutoControllerAllowlist.isCarHost("android.media.session.MediaController"))
+        assertFalse(AutoControllerAllowlist.isCarHost("com.android.bluetooth"))
     }
 }
