@@ -41,6 +41,23 @@ class ViewLogicTest {
         assertTrue(text.contains("unencrypted") || text.contains("clear"))
         assertTrue(text.contains("audio") || text.contains("altered"))
     }
+
+    @Test
+    fun nextSpeedWalksPresetsThenWraps() {
+        assertEquals(1.25, ViewLogic.nextSpeed(1.0))
+        assertEquals(0.5, ViewLogic.nextSpeed(3.0))
+        assertEquals(1.0, ViewLogic.nextSpeed(0.9))
+    }
+
+    @Test
+    fun controllerZeroMeansResumeNotRestart() {
+        assertEquals(-1.0, ViewLogic.controllerStartOverride(0L))
+        assertEquals(-1.0, ViewLogic.controllerStartOverride(-1L))
+        assertEquals(144.0, ViewLogic.controllerStartOverride(144_000L))
+        assertTrue(ViewLogic.ignoreControllerResetSeek(120.0, 0.0))
+        assertFalse(ViewLogic.ignoreControllerResetSeek(2.0, 0.0))
+        assertFalse(ViewLogic.ignoreControllerResetSeek(120.0, 90.0))
+    }
 }
 
 class TrustStoreTest {

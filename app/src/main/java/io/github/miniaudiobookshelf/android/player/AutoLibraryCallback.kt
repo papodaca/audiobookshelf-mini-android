@@ -1,11 +1,14 @@
 package io.github.miniaudiobookshelf.android.player
 
 import android.os.Bundle
+import android.util.Log
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaConstants
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.MediaSession
@@ -16,7 +19,6 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import io.github.miniaudiobookshelf.core.AutoBrowseTree
-import io.github.miniaudiobookshelf.core.AutoControllerAllowlist
 import io.github.miniaudiobookshelf.core.AutoMediaId
 import io.github.miniaudiobookshelf.core.AutoNode
 import kotlinx.coroutines.launch
@@ -35,15 +37,18 @@ class AutoLibraryCallback(
         session: MediaSession,
         controller: MediaSession.ControllerInfo,
     ): MediaSession.ConnectionResult {
-        if (!AutoControllerAllowlist.isAllowed(controller.packageName, service.packageName)) {
+        if (!service.isControllerAllowed(controller)) {
+            Log.w(PlaybackService.AUTO_TAG, "reject connect pkg=${controller.packageName} uid=${controller.uid}")
             return MediaSession.ConnectionResult.reject()
         }
+        Log.i(PlaybackService.AUTO_TAG, "connect pkg=${controller.packageName} uid=${controller.uid}")
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
             .setAvailableSessionCommands(
                 MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
                     .buildUpon()
                     .add(SessionCommand(PlaybackService.ACTION_SKIP_BACK_10, Bundle.EMPTY))
                     .add(SessionCommand(PlaybackService.ACTION_SKIP_FORWARD_10, Bundle.EMPTY))
+                    .add(SessionCommand(PlaybackService.ACTION_CYCLE_SPEED, Bundle.EMPTY))
                     .build(),
             )
             .setAvailablePlayerCommands(
@@ -51,14 +56,18 @@ class AutoLibraryCallback(
                     .buildUpon()
                     .add(Player.COMMAND_SEEK_BACK)
                     .add(Player.COMMAND_SEEK_FORWARD)
+                    .add(Player.COMMAND_SET_SPEED_AND_PITCH)
                     .build(),
             )
             .build()
     }
 
     override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
-        if (!service.isSignedIn()) {
-            service.sendSignInError(session)
+        service.serviceScope.launch {
+            service.awaitSessionSettled()
+            if (!service.isSignedIn()) {
+                service.sendSignInError(session)
+            }
         }
     }
 
@@ -77,8 +86,25 @@ class AutoLibraryCallback(
                 service.skipSeconds(10.0)
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
+            PlaybackService.ACTION_CYCLE_SPEED -> {
+                service.cycleSpeed()
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
         }
         return super.onCustomCommand(session, controller, customCommand, args)
+    }
+
+    override fun onAddMediaItems(
+        mediaSession: MediaSession,
+        controller: MediaSession.ControllerInfo,
+        mediaItems: MutableList<MediaItem>,
+    ): ListenableFuture<MutableList<MediaItem>> {
+        val resolved = mediaItems.map(::withPlaybackUri).toMutableList()
+        Log.i(
+            PlaybackService.AUTO_TAG,
+            "addMediaItems pkg=${controller.packageName} count=${resolved.size} ids=${resolved.joinToString { it.mediaId }}",
+        )
+        return Futures.immediateFuture(resolved)
     }
 
     override fun onGetLibraryRoot(
@@ -86,15 +112,22 @@ class AutoLibraryCallback(
         browser: MediaSession.ControllerInfo,
         params: LibraryParams?,
     ): ListenableFuture<LibraryResult<MediaItem>> {
+        Log.i(
+            PlaybackService.AUTO_TAG,
+            "root pkg=${browser.packageName} recent=${params?.isRecent} offline=${params?.isOffline} suggested=${params?.isSuggested}",
+        )
         service.noteRootHints(params)
-        val extras = Bundle(params?.extras ?: Bundle.EMPTY)
+        val extras = Bundle()
         extras.putBoolean(SEARCH_SUPPORTED, true)
-        val rootParams = LibraryParams.Builder()
-            .setExtras(extras)
-            .setOffline(params?.isOffline == true)
-            .setRecent(params?.isRecent == true)
-            .setSuggested(params?.isSuggested == true)
-            .build()
+        extras.putInt(
+            MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE,
+            MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_CATEGORY_LIST_ITEM,
+        )
+        extras.putInt(
+            MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE,
+            MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM,
+        )
+        val rootParams = LibraryParams.Builder().setExtras(extras).build()
         return Futures.immediateFuture(
             LibraryResult.ofItem(toMediaItem(AutoBrowseTree.rootItem()), rootParams),
         )
@@ -112,11 +145,29 @@ class AutoLibraryCallback(
         service.serviceScope.launch {
             try {
                 val nodes = service.loadChildren(parentId)
+                Log.i(
+                    PlaybackService.AUTO_TAG,
+                    "children parent=$parentId count=${nodes.size} signedIn=${service.isSignedIn()}",
+                )
                 future.set(LibraryResult.ofItemList(ImmutableList.copyOf(nodes.map(::toMediaItem)), params))
             } catch (e: kotlinx.coroutines.CancellationException) {
+                if (!future.isDone) {
+                    future.set(
+                        LibraryResult.ofItemList(
+                            ImmutableList.copyOf(AutoBrowseTree.notice("Couldn't load library").map(::toMediaItem)),
+                            params,
+                        ),
+                    )
+                }
                 throw e
-            } catch (_: Exception) {
-                future.set(LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE))
+            } catch (e: Exception) {
+                Log.w(PlaybackService.AUTO_TAG, "children failed parent=$parentId", e)
+                future.set(
+                    LibraryResult.ofItemList(
+                        ImmutableList.copyOf(AutoBrowseTree.notice("Couldn't load library").map(::toMediaItem)),
+                        params,
+                    ),
+                )
             }
         }
         return future
@@ -131,6 +182,7 @@ class AutoLibraryCallback(
         val item = when (parsed) {
             is AutoMediaId.Item -> MediaItem.Builder()
                 .setMediaId(mediaId)
+                .setUri(parsed.playbackUri())
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setIsPlayable(true)
@@ -195,6 +247,7 @@ class AutoLibraryCallback(
         val mediaId = AutoMediaId.Item(itemId, episodeId).encode()
         val item = MediaItem.Builder()
             .setMediaId(mediaId)
+            .setUri(AutoMediaId.Item(itemId, episodeId).playbackUri())
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setIsPlayable(true)
@@ -202,7 +255,9 @@ class AutoLibraryCallback(
                     .build(),
             )
             .build()
-        return Futures.immediateFuture(MediaSession.MediaItemsWithStartPosition(listOf(item), 0, 0))
+        return Futures.immediateFuture(
+            MediaSession.MediaItemsWithStartPosition(listOf(item), 0, C.TIME_UNSET),
+        )
     }
 
     private fun toMediaItem(node: AutoNode): MediaItem {
@@ -214,9 +269,10 @@ class AutoLibraryCallback(
             }
             AutoMediaId.Continue -> MediaMetadata.MEDIA_TYPE_FOLDER_AUDIO_BOOKS
             AutoMediaId.Downloads -> MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS
+            AutoMediaId.SignIn -> MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
             else -> MediaMetadata.MEDIA_TYPE_FOLDER_MIXED
         }
-        return MediaItem.Builder()
+        val builder = MediaItem.Builder()
             .setMediaId(node.id.encode())
             .setMediaMetadata(
                 MediaMetadata.Builder()
@@ -228,7 +284,17 @@ class AutoLibraryCallback(
                     .setMediaType(type)
                     .build(),
             )
-            .build()
+        val itemId = node.id
+        if (node.playable && itemId is AutoMediaId.Item) {
+            builder.setUri(itemId.playbackUri())
+        }
+        return builder.build()
+    }
+
+    private fun withPlaybackUri(item: MediaItem): MediaItem {
+        if (item.localConfiguration != null) return item
+        val parsed = AutoMediaId.parse(item.mediaId) as? AutoMediaId.Item ?: return item
+        return item.buildUpon().setUri(parsed.playbackUri()).build()
     }
 
     companion object {

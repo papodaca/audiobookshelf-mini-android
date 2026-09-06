@@ -30,10 +30,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 
 class SessionController(
     private val settings: SettingsStore,
@@ -69,6 +71,14 @@ class SessionController(
     fun settingsStore(): SettingsStore = settings
 
     fun isSignedIn(): Boolean = _state.value is SessionState.SignedIn
+
+    suspend fun awaitSettled(timeoutMs: Long = 8_000): SessionState {
+        val current = _state.value
+        if (current !is SessionState.Loading) return current
+        return withTimeoutOrNull(timeoutMs) {
+            state.first { it !is SessionState.Loading }
+        } ?: _state.value
+    }
 
     fun canDownload(): Boolean = isSignedIn() && userAccess.canDownload
 

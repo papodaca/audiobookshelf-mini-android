@@ -14,6 +14,7 @@ class AutoBrowseTreeTest {
             AutoMediaId.Continue,
             AutoMediaId.Downloads,
             AutoMediaId.Libraries,
+            AutoMediaId.SignIn,
             AutoMediaId.Library("lib-books"),
             AutoMediaId.Item("item-1"),
             AutoMediaId.Item("item-1", "ep-9"),
@@ -21,6 +22,7 @@ class AutoBrowseTreeTest {
         for (id in ids) {
             assertEquals(id, AutoMediaId.parse(id.encode()))
         }
+        assertEquals("abs://item/item-1", AutoMediaId.Item("item-1").playbackUri())
     }
 
     @Test
@@ -31,26 +33,42 @@ class AutoBrowseTreeTest {
         assertNull(AutoMediaId.parse("root/libraries/http://host/public/session/x"))
         assertNull(AutoMediaId.parse(""))
         assertNull(AutoMediaId.parse("queue/1"))
+        assertEquals(AutoMediaId.Root, AutoMediaId.parseParent(""))
+        assertEquals(AutoMediaId.Root, AutoMediaId.parseParent("/"))
+        assertEquals(AutoMediaId.Root, AutoMediaId.parseParent("queue/1"))
+        assertEquals(AutoMediaId.Continue, AutoMediaId.parseParent("root/continue"))
     }
 
     @Test
-    fun signedOutRootHasNoTabs() {
-        assertTrue(AutoBrowseTree.rootTabs(signedIn = false, selected = null).isEmpty())
+    fun rootAlwaysHasBrowsableTabs() {
+        val tabs = AutoBrowseTree.rootTabs(selected = null)
+        assertEquals(3, tabs.size)
+        assertEquals("Continue", tabs[0].title)
+        assertTrue(tabs.all { it.browsable && !it.playable })
     }
 
     @Test
     fun signedInTabsFollowLibraryType() {
         val books = Library(id = "lib-b", name = "Books", mediaType = "book")
-        val bookTabs = AutoBrowseTree.rootTabs(signedIn = true, selected = books)
+        val bookTabs = AutoBrowseTree.rootTabs(selected = books)
         assertEquals(3, bookTabs.size)
         assertEquals("Continue", bookTabs[0].title)
         assertTrue(bookTabs.all { it.browsable && !it.playable })
 
         val pods = Library(id = "lib-p", name = "Shows", mediaType = "podcast")
-        val podTabs = AutoBrowseTree.rootTabs(signedIn = true, selected = pods)
+        val podTabs = AutoBrowseTree.rootTabs(selected = pods)
         assertEquals("Episodes", podTabs[0].title)
         assertEquals("Downloads", podTabs[1].title)
         assertEquals("Libraries", podTabs[2].title)
+    }
+
+    @Test
+    fun noticeIsPlayableLeaf() {
+        val nodes = AutoBrowseTree.notice("Sign in on your phone")
+        assertEquals(1, nodes.size)
+        assertEquals(AutoMediaId.SignIn, nodes[0].id)
+        assertTrue(nodes[0].playable)
+        assertFalse(nodes[0].browsable)
     }
 
     @Test
@@ -131,6 +149,9 @@ class AutoControllerAllowlistTest {
         assertTrue(AutoControllerAllowlist.isAllowed("com.google.android.googlequicksearchbox", app))
         assertTrue(AutoControllerAllowlist.isAllowed("com.android.bluetooth", app))
         assertTrue(AutoControllerAllowlist.isAllowed("android", app))
+        assertTrue(AutoControllerAllowlist.isAllowed("android.media.session.MediaController", app))
+        assertTrue(AutoControllerAllowlist.isAllowed("com.google.android.gms.car", app))
+        assertTrue(AutoControllerAllowlist.isAllowed("com.google.android.embedded.projection", app))
         assertFalse(AutoControllerAllowlist.isAllowed("com.evil.browser", app))
         assertFalse(AutoControllerAllowlist.isAllowed("", app))
     }

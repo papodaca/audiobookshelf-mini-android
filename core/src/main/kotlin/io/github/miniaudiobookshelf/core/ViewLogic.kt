@@ -207,6 +207,20 @@ object ViewLogic {
 
     val speedPresets: List<Double> = listOf(0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0)
 
+    fun nextSpeed(current: Double): Double {
+        val clamped = clampRate(current)
+        return speedPresets.firstOrNull { it > clamped + 0.01 } ?: speedPresets.first()
+    }
+
+    fun controllerStartOverride(startPositionMs: Long): Double {
+        if (startPositionMs <= 0L) return -1.0
+        return startPositionMs / 1000.0
+    }
+
+    fun ignoreControllerResetSeek(currentSeconds: Double, seekSeconds: Double): Boolean {
+        return seekSeconds <= 0.5 && currentSeconds > 5.0
+    }
+
     fun formatRate(rate: Double): String {
         val clamped = clampRate(rate)
         return if (clamped == clamped.toInt().toDouble()) {

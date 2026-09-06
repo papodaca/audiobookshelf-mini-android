@@ -225,12 +225,33 @@ class PlaybackEngine(
     }
 
     private suspend fun playItemInternal(itemId: String, episodeId: String?, startOverride: Double) {
+        val current = stateHolder.value
+        val sameItem = current.itemId == itemId &&
+            current.episodeId == episodeId.orEmpty() &&
+            current.intended != IntendedState.STOPPED
+        if (sameItem && startOverride < 0) {
+            android.util.Log.i(TAG, "already on $itemId, skip restart")
+            if (current.intended != IntendedState.PLAYING) resume()
+            return
+        }
         if (transitionInFlight) return
         cancelStallRetry()
         if (!stallAutoRetry) stall.reset()
         stallAutoRetry = false
         transitionInFlight = true
         try {
+            hopWait {
+                stateHolder.update {
+                    it.copy(
+                        itemId = itemId,
+                        episodeId = episodeId.orEmpty(),
+                        intended = IntendedState.PLAYING,
+                        pipeline = PipelineState.BUFFERING,
+                        statusMessage = "",
+                        retryAvailable = false,
+                    )
+                }
+            }
             if (!signedIn()) {
                 hopWait {
                     stateHolder.update {

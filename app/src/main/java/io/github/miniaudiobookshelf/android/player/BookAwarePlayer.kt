@@ -10,6 +10,7 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import io.github.miniaudiobookshelf.core.AutoMediaId
+import io.github.miniaudiobookshelf.core.ViewLogic
 
 @UnstableApi
 class BookAwarePlayer(
@@ -20,6 +21,7 @@ class BookAwarePlayer(
     var onPlayFromSearch: ((query: String) -> Unit)? = null
 
     private val extraListeners = LinkedHashSet<Player.Listener>()
+    private var lastTimelineItemId: String = ""
 
     var artworkData: ByteArray? = null
         set(value) {
@@ -63,15 +65,32 @@ class BookAwarePlayer(
     }
 
     override fun seekTo(positionMs: Long) {
-        engine?.seekBookTime(positionMs / 1000.0)
+        val current = engine?.state?.value?.position ?: 0.0
+        val target = positionMs / 1000.0
+        if (ViewLogic.ignoreControllerResetSeek(current, target)) {
+            android.util.Log.i(
+                PlaybackService.AUTO_TAG,
+                "ignore seekTo($positionMs) at position=$current",
+            )
+            return
+        }
+        engine?.seekBookTime(target)
     }
 
     override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
-        engine?.seekBookTime(positionMs / 1000.0)
+        seekTo(positionMs)
     }
 
     override fun play() {
         engine?.resume()
+    }
+
+    override fun setPlayWhenReady(playWhenReady: Boolean) {
+        if (playWhenReady) engine?.resume() else engine?.pause()
+    }
+
+    override fun prepare() {
+        if (exo.mediaItemCount > 0) super.prepare()
     }
 
     override fun pause() {
@@ -104,6 +123,11 @@ class BookAwarePlayer(
 
     override fun setPlaybackParameters(params: PlaybackParameters) {
         engine?.setRate(params.speed.toDouble())
+    }
+
+    override fun getPlaybackParameters(): PlaybackParameters {
+        val rate = engine?.state?.value?.rate ?: return super.getPlaybackParameters()
+        return PlaybackParameters(rate.toFloat())
     }
 
     override fun setMediaItem(mediaItem: MediaItem) {
@@ -210,6 +234,7 @@ class BookAwarePlayer(
             .add(Player.COMMAND_SEEK_FORWARD)
             .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
             .add(Player.COMMAND_PLAY_PAUSE)
+            .add(Player.COMMAND_SET_SPEED_AND_PITCH)
         val hasChapters = engine?.state?.value?.hasChapters == true
         if (hasChapters) {
             builder
@@ -235,10 +260,17 @@ class BookAwarePlayer(
         val ready = playWhenReady
         val playing = isPlaying
         val playback = playbackState
+        val itemId = engine?.state?.value?.itemId.orEmpty()
+        val timelineReason = if (itemId != lastTimelineItemId) {
+            lastTimelineItemId = itemId
+            Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED
+        } else {
+            Player.TIMELINE_CHANGE_REASON_SOURCE_UPDATE
+        }
         listeners.forEach { listener ->
             listener.onMediaMetadataChanged(metadata)
             listener.onAvailableCommandsChanged(commands)
-            listener.onTimelineChanged(timeline, Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED)
+            listener.onTimelineChanged(timeline, timelineReason)
             listener.onPlayWhenReadyChanged(ready, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
             listener.onPlaybackStateChanged(playback)
             listener.onIsPlayingChanged(playing)
@@ -257,10 +289,23 @@ class BookAwarePlayer(
             return
         }
         val parsed = AutoMediaId.parse(first.mediaId) as? AutoMediaId.Item ?: return
-        val start = if (startPositionMs == C.TIME_UNSET || startPositionMs < 0) {
-            -1.0
-        } else {
-            startPositionMs / 1000.0
+        val start = ViewLogic.controllerStartOverride(startPositionMs)
+        val current = engine?.state?.value
+        val sameItem = current != null &&
+            current.itemId == parsed.itemId &&
+            current.episodeId == parsed.episodeId.orEmpty() &&
+            current.intended != IntendedState.STOPPED
+        android.util.Log.i(
+            PlaybackService.AUTO_TAG,
+            "play mediaId=${first.mediaId} startMs=$startPositionMs override=$start same=$sameItem pos=${current?.position}",
+        )
+        if (sameItem) {
+            if (start >= 0) {
+                engine?.seekBookTime(start)
+            } else if (current.intended != IntendedState.PLAYING) {
+                engine?.resume()
+            }
+            return
         }
         onPlayItem?.invoke(parsed.itemId, parsed.episodeId, start)
             ?: engine?.playItem(parsed.itemId, parsed.episodeId, start)
@@ -289,6 +334,7 @@ class BookAwarePlayer(
             .build()
         return MediaItem.Builder()
             .setMediaId(id)
+            .setUri(AutoMediaId.Item(state.itemId, state.episodeId.ifEmpty { null }).playbackUri())
             .setMediaMetadata(metadata)
             .build()
     }

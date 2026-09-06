@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -101,10 +102,29 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? {
-        if (!AutoControllerAllowlist.isAllowed(controllerInfo.packageName, packageName)) {
+        if (!isControllerAllowed(controllerInfo)) {
+            Log.w(
+                AUTO_TAG,
+                "reject session pkg=${controllerInfo.packageName} uid=${controllerInfo.uid} trusted=${controllerInfo.isTrusted}",
+            )
             return null
         }
+        Log.i(
+            AUTO_TAG,
+            "session pkg=${controllerInfo.packageName} uid=${controllerInfo.uid} trusted=${controllerInfo.isTrusted}",
+        )
         return mediaSession
+    }
+
+    fun isControllerAllowed(controller: MediaSession.ControllerInfo): Boolean {
+        if (controller.isTrusted) return true
+        val session = mediaSession
+        if (session != null &&
+            (session.isAutoCompanionController(controller) || session.isAutomotiveController(controller))
+        ) {
+            return true
+        }
+        return AutoControllerAllowlist.isAllowed(controller.packageName, packageName)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -158,6 +178,10 @@ class PlaybackService : MediaLibraryService() {
 
     fun isSignedIn(): Boolean = app().session.isSignedIn()
 
+    suspend fun awaitSessionSettled() {
+        app().session.awaitSettled()
+    }
+
     fun settings(): SettingsStore = app().session.settingsStore()
 
     fun sendSignInError(session: MediaSession) {
@@ -182,29 +206,36 @@ class PlaybackService : MediaLibraryService() {
     }
 
     suspend fun loadChildren(parentId: String): List<AutoNode> {
-        if (!isSignedIn()) return emptyList()
-        val parsed = AutoMediaId.parse(parentId) ?: return emptyList()
-        val api = app().session.apiClient() ?: return emptyList()
-        return when (parsed) {
-            AutoMediaId.Root -> {
-                val selected = selectedLibrary()
-                AutoBrowseTree.rootTabs(signedIn = true, selected = selected)
-            }
-            AutoMediaId.Continue -> homeNodes(selectedLibrary())
-            AutoMediaId.Downloads -> AutoBrowseTree.downloadChildren(downloads().completeEntries())
-            AutoMediaId.Libraries -> {
-                val list = withContext(Dispatchers.IO) { api.fetchLibraries() }
-                AutoBrowseTree.libraryChildren(list.libraries)
-            }
-            is AutoMediaId.Library -> {
-                val list = withContext(Dispatchers.IO) { api.fetchLibraries() }
-                val library = list.libraries.firstOrNull { it.id == parsed.libraryId } ?: return emptyList()
-                settings().setLibraryId(library.id)
-                notifyTreeChanged()
-                homeNodes(library)
-            }
-            is AutoMediaId.Item -> emptyList()
+        val parsed = AutoMediaId.parseParent(parentId)
+        if (parsed == AutoMediaId.Root) {
+            return AutoBrowseTree.rootTabs()
         }
+        app().session.awaitSettled()
+        if (!isSignedIn()) {
+            return AutoBrowseTree.notice("Sign in on your phone")
+        }
+        val api = app().session.apiClient() ?: return AutoBrowseTree.notice("Sign in on your phone")
+        return withTimeoutOrNull(12_000) {
+            when (parsed) {
+                AutoMediaId.Root -> AutoBrowseTree.rootTabs()
+                AutoMediaId.Continue -> homeNodes(selectedLibrary())
+                AutoMediaId.Downloads -> AutoBrowseTree.downloadChildren(downloads().completeEntries())
+                AutoMediaId.Libraries -> {
+                    val list = withContext(Dispatchers.IO) { api.fetchLibraries() }
+                    AutoBrowseTree.libraryChildren(list.libraries)
+                }
+                is AutoMediaId.Library -> {
+                    val list = withContext(Dispatchers.IO) { api.fetchLibraries() }
+                    val library = list.libraries.firstOrNull { it.id == parsed.libraryId }
+                        ?: return@withTimeoutOrNull emptyList()
+                    settings().setLibraryId(library.id)
+                    notifyTreeChanged()
+                    homeNodes(library)
+                }
+                AutoMediaId.SignIn -> emptyList()
+                is AutoMediaId.Item -> emptyList()
+            }
+        } ?: AutoBrowseTree.notice("Couldn't load library")
     }
 
     suspend fun searchItems(query: String): List<MediaItem> {
@@ -214,6 +245,7 @@ class PlaybackService : MediaLibraryService() {
             val node = AutoBrowseTree.itemNode(item) ?: return@mapNotNull null
             MediaItem.Builder()
                 .setMediaId(node.id.encode())
+                .setUri(node.id.playbackUri())
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setTitle(node.title)
@@ -244,6 +276,11 @@ class PlaybackService : MediaLibraryService() {
 
     fun skipSeconds(delta: Double) {
         ensureEngine()?.skip(delta)
+    }
+
+    fun cycleSpeed() {
+        val next = ViewLogic.nextSpeed(app().playback.state.value.rate)
+        ensureEngine()?.setRate(next)
     }
 
     internal fun ensureEngine(): PlaybackEngine? {
@@ -352,6 +389,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private fun mediaButtons(): List<CommandButton> {
+        val rate = app().playback.state.value.rate
         return listOf(
             CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10)
                 .setSessionCommand(SessionCommand(ACTION_SKIP_BACK_10, Bundle.EMPTY))
@@ -363,7 +401,28 @@ class PlaybackService : MediaLibraryService() {
                 .setDisplayName(getString(R.string.skip_forward_10))
                 .setSlots(CommandButton.SLOT_FORWARD)
                 .build(),
+            CommandButton.Builder(speedIcon(rate))
+                .setSessionCommand(SessionCommand(ACTION_CYCLE_SPEED, Bundle.EMPTY))
+                .setDisplayName(ViewLogic.formatRate(rate))
+                .setSlots(
+                    CommandButton.SLOT_FORWARD_SECONDARY,
+                    CommandButton.SLOT_BACK_SECONDARY,
+                    CommandButton.SLOT_OVERFLOW,
+                )
+                .build(),
         )
+    }
+
+    private fun speedIcon(rate: Double): Int {
+        return when {
+            rate < 0.65 -> CommandButton.ICON_PLAYBACK_SPEED_0_5
+            rate < 0.9 -> CommandButton.ICON_PLAYBACK_SPEED_0_8
+            rate < 1.1 -> CommandButton.ICON_PLAYBACK_SPEED_1_0
+            rate < 1.35 -> CommandButton.ICON_PLAYBACK_SPEED_1_2
+            rate < 1.65 -> CommandButton.ICON_PLAYBACK_SPEED_1_5
+            rate < 1.9 -> CommandButton.ICON_PLAYBACK_SPEED_1_8
+            else -> CommandButton.ICON_PLAYBACK_SPEED_2_0
+        }
     }
 
     private fun buildExoPlayer(): ExoPlayer {
@@ -408,6 +467,8 @@ class PlaybackService : MediaLibraryService() {
         const val EXTRA_START_AT = "start_at"
         const val ACTION_SKIP_BACK_10 = "io.github.miniaudiobookshelf.android.action.SKIP_BACK_10"
         const val ACTION_SKIP_FORWARD_10 = "io.github.miniaudiobookshelf.android.action.SKIP_FORWARD_10"
+        const val ACTION_CYCLE_SPEED = "io.github.miniaudiobookshelf.android.action.CYCLE_SPEED"
+        const val AUTO_TAG = "MiniAbsAuto"
         private const val DEFAULT_ART_PX = 256
         private const val ART_SIZE_HINT = "android.media.extras.MEDIA_ART_SIZE_HINT_PIXELS"
     }
@@ -419,6 +480,7 @@ private data class NotificationSnapshot(
     val author: String,
     val intended: IntendedState,
     val artUrl: String,
+    val rate: Double,
 ) {
     companion object {
         fun from(state: PlayerState) = NotificationSnapshot(
@@ -427,6 +489,7 @@ private data class NotificationSnapshot(
             author = state.author,
             intended = state.intended,
             artUrl = state.artUrl,
+            rate = state.rate,
         )
     }
 }

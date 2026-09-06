@@ -5,6 +5,7 @@ sealed class AutoMediaId {
     data object Continue : AutoMediaId()
     data object Downloads : AutoMediaId()
     data object Libraries : AutoMediaId()
+    data object SignIn : AutoMediaId()
     data class Library(val libraryId: String) : AutoMediaId()
     data class Item(val itemId: String, val episodeId: String? = null) : AutoMediaId()
 
@@ -13,6 +14,7 @@ sealed class AutoMediaId {
         Continue -> CONTINUE
         Downloads -> DOWNLOADS
         Libraries -> LIBRARIES
+        SignIn -> SIGN_IN
         is Library -> "$LIBRARIES/$libraryId"
         is Item -> {
             val episode = episodeId
@@ -20,11 +22,14 @@ sealed class AutoMediaId {
         }
     }
 
+    fun playbackUri(): String = "abs://${encode()}"
+
     companion object {
         const val ROOT = "root"
         const val CONTINUE = "root/continue"
         const val DOWNLOADS = "root/downloads"
         const val LIBRARIES = "root/libraries"
+        const val SIGN_IN = "root/signin"
         const val ITEM_PREFIX = "item/"
         const val EPISODE_SEP = "/ep/"
 
@@ -35,6 +40,7 @@ sealed class AutoMediaId {
                 raw == CONTINUE -> Continue
                 raw == DOWNLOADS -> Downloads
                 raw == LIBRARIES -> Libraries
+                raw == SIGN_IN -> SignIn
                 raw.startsWith("$LIBRARIES/") -> {
                     val id = raw.removePrefix("$LIBRARIES/")
                     if (id.isEmpty() || looksLikeSession(id)) null else Library(id)
@@ -50,6 +56,8 @@ sealed class AutoMediaId {
                 else -> null
             }
         }
+
+        fun parseParent(raw: String): AutoMediaId = parse(raw) ?: Root
 
         fun looksLikeSession(raw: String): Boolean {
             return raw.contains("/public/session/") || raw.contains("/track/")
@@ -73,8 +81,7 @@ object AutoBrowseTree {
         playable = false,
     )
 
-    fun rootTabs(signedIn: Boolean, selected: Library?): List<AutoNode> {
-        if (!signedIn) return emptyList()
+    fun rootTabs(selected: Library? = null): List<AutoNode> {
         val continueTitle = if (ViewLogic.isPodcastLibrary(selected)) "Episodes" else "Continue"
         return listOf(
             AutoNode(AutoMediaId.Continue, continueTitle, browsable = true, playable = false),
@@ -82,6 +89,10 @@ object AutoBrowseTree {
             AutoNode(AutoMediaId.Libraries, "Libraries", browsable = true, playable = false),
         )
     }
+
+    fun notice(title: String): List<AutoNode> = listOf(
+        AutoNode(AutoMediaId.SignIn, title, browsable = false, playable = true),
+    )
 
     fun continueChildren(items: List<LibraryItem>): List<AutoNode> {
         return items.mapNotNull { itemNode(it) }
