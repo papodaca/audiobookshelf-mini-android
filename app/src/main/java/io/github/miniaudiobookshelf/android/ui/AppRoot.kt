@@ -69,7 +69,7 @@ fun AppRoot(session: SessionController, playback: PlaybackCommands) {
                 ) { innerPadding ->
                     ConnectScreen(
                         session = session,
-                        ui = current.ui,
+                        step = current.step,
                         modifier = Modifier.padding(innerPadding),
                     )
                 }

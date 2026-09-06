@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import io.github.miniaudiobookshelf.core.AuthMode
 import io.github.miniaudiobookshelf.core.SettingsStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -30,6 +31,8 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
     private var lastTitle: String = ""
     private var lastAuthor: String = ""
     private var allowMeteredDownloads: Boolean = false
+    private val lastUsernames = mutableMapOf<String, String>()
+    private val lastAuthModes = mutableMapOf<String, AuthMode>()
 
     init {
         val prefs = runBlocking { dataStore.data.first() }
@@ -44,6 +47,18 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         lastTitle = prefs[LAST_TITLE].orEmpty()
         lastAuthor = prefs[LAST_AUTHOR].orEmpty()
         allowMeteredDownloads = prefs[ALLOW_METERED] ?: false
+        for ((key, value) in prefs.asMap()) {
+            val name = key.name
+            val text = value as? String ?: continue
+            when {
+                name.startsWith(LAST_USERNAME_PREFIX) -> {
+                    lastUsernames[name.removePrefix(LAST_USERNAME_PREFIX)] = text
+                }
+                name.startsWith(LAST_AUTH_MODE_PREFIX) -> {
+                    parseAuthMode(text)?.let { lastAuthModes[name.removePrefix(LAST_AUTH_MODE_PREFIX)] = it }
+                }
+            }
+        }
     }
 
     override fun getServerUrl(): String = synchronized(lock) { serverUrl }
@@ -132,6 +147,24 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         persist { it[ALLOW_METERED] = value }
     }
 
+    override fun getLastUsername(origin: String): String = synchronized(lock) {
+        lastUsernames[origin].orEmpty()
+    }
+
+    override fun setLastUsername(origin: String, value: String) {
+        synchronized(lock) { lastUsernames[origin] = value }
+        persist { it[stringPreferencesKey(LAST_USERNAME_PREFIX + origin)] = value }
+    }
+
+    override fun getLastAuthMode(origin: String): AuthMode? = synchronized(lock) {
+        lastAuthModes[origin]
+    }
+
+    override fun setLastAuthMode(origin: String, mode: AuthMode) {
+        synchronized(lock) { lastAuthModes[origin] = mode }
+        persist { it[stringPreferencesKey(LAST_AUTH_MODE_PREFIX + origin)] = mode.name.lowercase() }
+    }
+
     private fun persist(mutate: (MutablePreferences) -> Unit) {
         runBlocking {
             dataStore.edit(mutate)
@@ -150,6 +183,16 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         private val LAST_TITLE = stringPreferencesKey("last_title")
         private val LAST_AUTHOR = stringPreferencesKey("last_author")
         private val ALLOW_METERED = booleanPreferencesKey("allow_metered_downloads")
+        private const val LAST_USERNAME_PREFIX = "last_username."
+        private const val LAST_AUTH_MODE_PREFIX = "last_auth_mode."
+
+        private fun parseAuthMode(raw: String): AuthMode? {
+            return when (raw.lowercase()) {
+                "password" -> AuthMode.PASSWORD
+                "api_key" -> AuthMode.API_KEY
+                else -> AuthMode.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+            }
+        }
 
         private fun encodePins(pins: Map<String, String>): String {
             val obj = JSONObject()

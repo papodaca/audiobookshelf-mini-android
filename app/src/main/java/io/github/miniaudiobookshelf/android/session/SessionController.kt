@@ -4,15 +4,20 @@ import io.github.miniaudiobookshelf.android.browse.BrowseController
 import io.github.miniaudiobookshelf.android.http.OkHttpTransport
 import io.github.miniaudiobookshelf.core.ApiClient
 import io.github.miniaudiobookshelf.core.ApiError
-import io.github.miniaudiobookshelf.core.AuthOffer
+import io.github.miniaudiobookshelf.core.AuthMode
 import io.github.miniaudiobookshelf.core.Clock
 import io.github.miniaudiobookshelf.core.ConnectDecision
+import io.github.miniaudiobookshelf.core.ConnectEvent
 import io.github.miniaudiobookshelf.core.ConnectFailure
+import io.github.miniaudiobookshelf.core.ConnectFlow
+import io.github.miniaudiobookshelf.core.ConnectReason
+import io.github.miniaudiobookshelf.core.ConnectStep
 import io.github.miniaudiobookshelf.core.CredentialManager
 import io.github.miniaudiobookshelf.core.CredentialMode
 import io.github.miniaudiobookshelf.core.DownloadCatalog
 import io.github.miniaudiobookshelf.core.EmptyDownloadCatalog
 import io.github.miniaudiobookshelf.core.LibraryItem
+import io.github.miniaudiobookshelf.core.PinPrompt
 import io.github.miniaudiobookshelf.core.PlaybackQueue
 import io.github.miniaudiobookshelf.core.PlaybackStarter
 import io.github.miniaudiobookshelf.core.ServerUrl
@@ -51,6 +56,7 @@ class SessionController(
     private var credentials: CredentialManager? = null
     private var server: ServerUrl? = null
     private var browse: BrowseController? = null
+    private var connectReason: ConnectReason = ConnectReason.NONE
     private val queue = PlaybackQueue()
     var downloads: DownloadCatalog = EmptyDownloadCatalog
     var onSignOutDownloads: ((delete: Boolean) -> Unit)? = null
@@ -97,7 +103,6 @@ class SessionController(
     fun start() {
         ensureDeviceId()
         scope.launch {
-            val url = settings.getServerUrl()
             val restored = try {
                 withContext(Dispatchers.IO) {
                     withTimeout(20_000) { restoreCredentials() }
@@ -112,7 +117,7 @@ class SessionController(
             if (restored) {
                 showSignedIn()
             } else {
-                _state.value = SessionState.Connect(ConnectUi(url = url))
+                enterConnect(ConnectReason.RESTORE_FAILED)
             }
         }
     }
@@ -123,61 +128,64 @@ class SessionController(
         }
     }
 
+    fun changeServer() {
+        connectReason = ConnectReason.NONE
+        apply(ConnectEvent.ChangeServer)
+    }
+
+    fun switchMode(mode: AuthMode) {
+        apply(ConnectEvent.SwitchMode(mode))
+    }
+
     fun pinCertificate() {
-        val connect = currentConnect() ?: return
-        val pin = connect.pin ?: return
-        trust.pin(pin.origin, pin.pem)
+        val trustStep = currentStep() as? ConnectStep.Trust ?: return
+        trust.pin(trustStep.pin.origin, trustStep.pin.pem)
         transport.rebuild()
-        _state.value = SessionState.Connect(connect.copy(pin = null, error = null))
-        probe(connect.url, httpAck = true)
+        apply(ConnectEvent.PinAccepted)
+        probe(trustStep.server.url, httpAck = true)
     }
 
     fun refusePin() {
-        _state.update { state ->
-            if (state is SessionState.Connect) {
-                SessionState.Connect(
-                    state.ui.copy(
-                        pin = null,
-                        offer = null,
-                        error = ViewLogic.userMessage(ConnectFailure.TLS_UNTRUSTED),
-                    ),
-                )
-            } else {
-                state
-            }
-        }
+        apply(ConnectEvent.PinRefused)
     }
 
     fun signInPassword(username: String, password: String) {
         scope.launch {
+            val creds = currentStep() as? ConnectStep.Credentials ?: return@launch
+            if (creds.server.origin != server?.origin) return@launch
             val mgr = credentials ?: return@launch
-            setBusy(true)
+            apply(ConnectEvent.SignInStarted)
             try {
                 withContext(Dispatchers.IO) {
                     mgr.signInPassword(username, password)
                     api?.setTokenProvider(mgr)
                     refreshAccess()
                 }
+                settings.setLastUsername(creds.server.origin, username)
+                settings.setLastAuthMode(creds.server.origin, AuthMode.PASSWORD)
                 showSignedIn()
             } catch (e: Exception) {
-                showConnectError(ViewLogic.classifyApiError(e, apiKeyPath = false))
+                apply(ConnectEvent.SignInFailed(ViewLogic.classifyApiError(e, apiKeyPath = false)))
             }
         }
     }
 
     fun signInApiKey(key: String) {
         scope.launch {
+            val creds = currentStep() as? ConnectStep.Credentials ?: return@launch
+            if (creds.server.origin != server?.origin) return@launch
             val mgr = credentials ?: return@launch
-            setBusy(true)
+            apply(ConnectEvent.SignInStarted)
             try {
                 withContext(Dispatchers.IO) {
                     mgr.signInApiKey(key)
                     api?.setTokenProvider(mgr)
                     refreshAccess()
                 }
+                settings.setLastAuthMode(creds.server.origin, AuthMode.API_KEY)
                 showSignedIn()
             } catch (e: Exception) {
-                showConnectError(ViewLogic.classifyApiError(e, apiKeyPath = true))
+                apply(ConnectEvent.SignInFailed(ViewLogic.classifyApiError(e, apiKeyPath = true)))
             }
         }
     }
@@ -186,11 +194,10 @@ class SessionController(
         scope.launch {
             playback.stop()
             try {
-                withContext(Dispatchers.IO) { credentials?.signOut() }
+                withContext(Dispatchers.IO) { credentials?.signOut(logoutOnServer = true) }
             } catch (_: Exception) {
             }
             onSignOutDownloads?.invoke(deleteDownloads)
-            val url = server?.normalized ?: settings.getServerUrl()
             settings.setLastItemId("")
             settings.setLastEpisodeId("")
             settings.setLastTitle("")
@@ -199,7 +206,7 @@ class SessionController(
             browse = null
             userAccess = UserAccess()
             playback.notifyLibraryChanged()
-            _state.value = SessionState.Connect(ConnectUi(url = url))
+            enterConnect(ConnectReason.SIGNED_OUT)
         }
     }
 
@@ -227,7 +234,15 @@ class SessionController(
                     )
                 }
             } catch (_: Exception) {
-                showConnectError(ViewLogic.classifyApiError(ApiError.Unauthorized(), apiKeyPath = true), url)
+                enterConnect(ConnectReason.RESTORE_FAILED)
+                apply(
+                    ConnectEvent.ProbeFailed(
+                        url = url,
+                        message = ViewLogic.userMessage(
+                            ViewLogic.classifyApiError(ApiError.Unauthorized(), apiKeyPath = true),
+                        ),
+                    ),
+                )
             }
         }
     }
@@ -240,6 +255,41 @@ class SessionController(
 
     fun playNextQueued(): Boolean {
         return browse?.playNextQueued() == true
+    }
+
+    private fun expireSession() {
+        scope.launch {
+            playback.stop()
+            try {
+                withContext(Dispatchers.IO) { credentials?.signOut(logoutOnServer = false) }
+            } catch (_: Exception) {
+            }
+            queue.clear()
+            browse = null
+            userAccess = UserAccess()
+            playback.notifyLibraryChanged()
+            enterConnect(ConnectReason.SESSION_EXPIRED)
+        }
+    }
+
+    private fun enterConnect(reason: ConnectReason) {
+        connectReason = if (reason == ConnectReason.RESTORE_FAILED && settings.getServerUrl().isEmpty()) {
+            ConnectReason.NONE
+        } else {
+            reason
+        }
+        val url = settings.getServerUrl()
+        if (url.isEmpty()) {
+            _state.value = SessionState.Connect(ConnectStep.Server())
+            return
+        }
+        val ack = try {
+            settings.isHttpAcknowledged(ServerUrl.parse(url).origin)
+        } catch (_: Exception) {
+            false
+        }
+        _state.value = SessionState.Connect(ConnectStep.Server(url = url, busy = true))
+        probe(url, ack)
     }
 
     private suspend fun restoreCredentials(): Boolean {
@@ -264,77 +314,114 @@ class SessionController(
     }
 
     private suspend fun probeInternal(urlText: String, httpAck: Boolean) {
-        setBusy(true)
-        try {
-            val parsed = ServerUrl.parse(urlText)
-            if (parsed.isHttp) {
-                if (!httpAck) {
-                    _state.value = SessionState.Connect(
-                        ConnectUi(
+        apply(ConnectEvent.ProbeStarted(urlText))
+        val candidates = try {
+            ViewLogic.probeCandidates(urlText)
+        } catch (e: ApiError) {
+            apply(
+                ConnectEvent.ProbeFailed(
+                    url = urlText,
+                    message = ViewLogic.userMessage(ViewLogic.classifyApiError(e, apiKeyPath = false)),
+                ),
+            )
+            return
+        } catch (_: Exception) {
+            apply(
+                ConnectEvent.ProbeFailed(
+                    url = urlText,
+                    message = ViewLogic.userMessage(ConnectFailure.UNREACHABLE),
+                ),
+            )
+            return
+        }
+
+        var tlsPin: PinPrompt? = null
+        for ((index, candidate) in candidates.withIndex()) {
+            val last = index == candidates.lastIndex
+            if (candidate.isHttp) {
+                val originAck = httpAck || settings.isHttpAcknowledged(candidate.origin)
+                if (!originAck) {
+                    apply(ConnectEvent.HttpNeedsAck(urlText))
+                    return
+                }
+                settings.setHttpAcknowledged(candidate.origin, true)
+            }
+            try {
+                rebuild(candidate)
+                val status = api!!.probeStatus()
+                if (ViewLogic.versionDecision(status.version) == ConnectDecision.TOO_OLD) {
+                    apply(
+                        ConnectEvent.ProbeFailed(
                             url = urlText,
-                            showHttpWarning = true,
-                            httpAck = false,
-                            busy = false,
+                            message = ViewLogic.userMessage(ConnectFailure.TOO_OLD),
                         ),
                     )
                     return
                 }
-                settings.setHttpAcknowledged(parsed.origin, true)
-            }
-            rebuild(parsed)
-            val status = api!!.probeStatus()
-            if (ViewLogic.versionDecision(status.version) == ConnectDecision.TOO_OLD) {
-                showConnectError(ConnectFailure.TOO_OLD, urlText, parsed.isHttp, httpAck)
+                val offer = ViewLogic.authOffer(status)
+                val remembered = settings.getLastAuthMode(candidate.origin)
+                apply(
+                    ConnectEvent.ProbeOk(
+                        server = candidate,
+                        version = status.version,
+                        offer = offer,
+                        mode = ViewLogic.defaultAuthMode(offer, remembered),
+                        username = settings.getLastUsername(candidate.origin),
+                        reason = connectReason,
+                        typedUrl = urlText,
+                    ),
+                )
+                return
+            } catch (e: ApiError.Tls) {
+                tlsPin = capturePin() ?: tlsPin
+                if (!last) continue
+                if (tlsPin != null) {
+                    apply(ConnectEvent.TlsUntrusted(tlsPin))
+                } else {
+                    apply(
+                        ConnectEvent.ProbeFailed(
+                            url = urlText,
+                            message = ViewLogic.userMessage(ConnectFailure.TLS_UNTRUSTED),
+                        ),
+                    )
+                }
+                return
+            } catch (e: ApiError) {
+                val failure = ViewLogic.classifyApiError(e, apiKeyPath = false)
+                if (ViewLogic.probeAdvances(failure) && !last) continue
+                apply(
+                    ConnectEvent.ProbeFailed(
+                        url = urlText,
+                        message = ViewLogic.userMessage(failure),
+                    ),
+                )
+                return
+            } catch (_: Exception) {
+                if (!last) continue
+                if (tlsPin != null) {
+                    apply(ConnectEvent.TlsUntrusted(tlsPin))
+                } else {
+                    apply(
+                        ConnectEvent.ProbeFailed(
+                            url = urlText,
+                            message = ViewLogic.userMessage(ConnectFailure.UNREACHABLE),
+                        ),
+                    )
+                }
                 return
             }
-            val offer = ViewLogic.authOffer(status)
-            _state.value = SessionState.Connect(
-                ConnectUi(
-                    url = urlText,
-                    showHttpWarning = parsed.isHttp,
-                    httpAck = httpAck || !parsed.isHttp,
-                    offer = offer,
-                    busy = false,
-                ),
-            )
-        } catch (e: ApiError.Tls) {
-            handleTls(urlText, httpAck)
-        } catch (e: ApiError) {
-            val parsed = try {
-                ServerUrl.parse(urlText)
-            } catch (_: ApiError) {
-                null
-            }
-            showConnectError(
-                ViewLogic.classifyApiError(e, apiKeyPath = false),
-                urlText,
-                parsed?.isHttp == true,
-                httpAck,
-            )
-        } catch (_: Exception) {
-            showConnectError(ConnectFailure.UNREACHABLE, urlText, httpAck = httpAck)
         }
     }
 
-    private fun handleTls(urlText: String, httpAck: Boolean) {
-        val parsed = server
+    private fun capturePin(): PinPrompt? {
+        val parsed = server ?: return null
         val pem = transport.lastPeerPem
-        val alreadyPinned = parsed != null && trust.pemFor(parsed.origin) != null
-        if (alreadyPinned || pem.isEmpty()) {
-            showConnectError(ConnectFailure.TLS_UNTRUSTED, urlText, parsed?.isHttp == true, httpAck)
-            return
-        }
-        val fingerprint = sha256Hex(pem)
-        val body = ViewLogic.userMessage(ConnectFailure.TLS_UNTRUSTED) + "\n\nSHA-256: " + fingerprint
-        _state.value = SessionState.Connect(
-            ConnectUi(
-                url = urlText,
-                showHttpWarning = parsed?.isHttp == true,
-                httpAck = httpAck,
-                error = body,
-                pin = PinPrompt(origin = parsed?.origin.orEmpty(), fingerprint = fingerprint, pem = pem),
-                busy = false,
-            ),
+        if (pem.isEmpty()) return null
+        if (trust.pemFor(parsed.origin) != null) return null
+        return PinPrompt(
+            origin = parsed.origin,
+            fingerprint = sha256Hex(pem),
+            pem = pem,
         )
     }
 
@@ -357,6 +444,7 @@ class SessionController(
             null
         }
         val client = api ?: return
+        connectReason = ConnectReason.NONE
         val controller = BrowseController(
             api = client,
             settings = settings,
@@ -364,7 +452,7 @@ class SessionController(
             playback = playback,
             scope = scope,
             downloads = downloads,
-            onSessionExpired = { confirmSignOut() },
+            onSessionExpired = { expireSession() },
         )
         browse = controller
         controller.start()
@@ -379,33 +467,16 @@ class SessionController(
         onSignedIn?.invoke()
     }
 
-    private fun showConnectError(
-        failure: ConnectFailure,
-        urlText: String = currentConnect()?.url.orEmpty(),
-        showHttp: Boolean = currentConnect()?.showHttpWarning == true,
-        httpAck: Boolean = currentConnect()?.httpAck == true,
-    ) {
-        _state.value = SessionState.Connect(
-            ConnectUi(
-                url = urlText,
-                showHttpWarning = showHttp,
-                httpAck = httpAck,
-                error = ViewLogic.userMessage(failure),
-                busy = false,
-            ),
-        )
-    }
-
-    private fun setBusy(busy: Boolean) {
-        _state.update { state ->
-            when (state) {
-                is SessionState.Connect -> SessionState.Connect(state.ui.copy(busy = busy, error = if (busy) null else state.ui.error))
-                else -> state
-            }
+    private fun apply(event: ConnectEvent) {
+        val current = _state.value
+        val step = when (current) {
+            is SessionState.Connect -> current.step
+            else -> ConnectStep.Server()
         }
+        _state.value = SessionState.Connect(ConnectFlow.reduce(step, event))
     }
 
-    private fun currentConnect(): ConnectUi? = (_state.value as? SessionState.Connect)?.ui
+    private fun currentStep(): ConnectStep? = (_state.value as? SessionState.Connect)?.step
 
     private fun ensureDeviceId() {
         val mgr = credentials
@@ -421,7 +492,7 @@ class SessionController(
 
 sealed class SessionState {
     data object Loading : SessionState()
-    data class Connect(val ui: ConnectUi) : SessionState()
+    data class Connect(val step: ConnectStep) : SessionState()
     data class SignedIn(
         val origin: String,
         val apiKey: Boolean,
@@ -430,22 +501,6 @@ sealed class SessionState {
         val canDownload: Boolean = true,
     ) : SessionState()
 }
-
-data class ConnectUi(
-    val url: String = "",
-    val showHttpWarning: Boolean = false,
-    val httpAck: Boolean = false,
-    val busy: Boolean = false,
-    val error: String? = null,
-    val offer: AuthOffer? = null,
-    val pin: PinPrompt? = null,
-)
-
-data class PinPrompt(
-    val origin: String,
-    val fingerprint: String,
-    val pem: String,
-)
 
 internal fun sha256Hex(text: String): String {
     val digest = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))

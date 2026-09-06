@@ -12,6 +12,11 @@
     <string name="cancel">Cancel</string>
     <string name="signed_in">Signed in</string>
     <string name="http_ack">I understand the risk and want to continue</string>
+    <string name="change_server">Change</string>
+    <string name="use_password">Password</string>
+    <string name="use_api_key">API key</string>
+    <string name="sso_only_hint">This server uses single sign-on. An admin can issue an API key in the server UI.</string>
+    <string name="session_expired">Your session expired. Sign in again.</string>
     <string name="untrusted_certificate">Untrusted certificate</string>
     <string name="pin_certificate">Pin certificate</string>
     <string name="refuse">Refuse</string>

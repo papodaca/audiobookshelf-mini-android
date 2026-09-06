@@ -79,6 +79,43 @@ object ViewLogic {
         }
     }
 
+    fun defaultAuthMode(offer: AuthOffer, remembered: AuthMode?): AuthMode {
+        if (!offer.password) return AuthMode.API_KEY
+        if (remembered == AuthMode.API_KEY) return AuthMode.API_KEY
+        return AuthMode.PASSWORD
+    }
+
+    fun canSubmit(mode: AuthMode, username: String, password: String, apiKey: String): Boolean {
+        return when (mode) {
+            AuthMode.PASSWORD -> username.isNotBlank() && password.isNotBlank()
+            AuthMode.API_KEY -> apiKey.isNotBlank()
+        }
+    }
+
+    fun signInFailureStays(failure: ConnectFailure): Boolean {
+        return when (failure) {
+            ConnectFailure.BAD_PASSWORD,
+            ConnectFailure.REJECTED_API_KEY,
+            ConnectFailure.RATE_LIMITED,
+            -> true
+            else -> false
+        }
+    }
+
+    fun probeAdvances(failure: ConnectFailure): Boolean {
+        return failure == ConnectFailure.UNREACHABLE || failure == ConnectFailure.TLS_UNTRUSTED
+    }
+
+    fun probeCandidates(input: String): List<ServerUrl> {
+        val parsed = ServerUrl.parse(input)
+        if (!parsed.schemeLess) return listOf(parsed)
+        val host = parsed.normalized
+        return listOf(
+            ServerUrl.parse("https://$host"),
+            ServerUrl.parse("http://$host"),
+        )
+    }
+
     enum class PlayDecision {
         START,
         RESUME,

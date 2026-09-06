@@ -112,11 +112,13 @@ class CredentialManager(
         }
     }
 
-    suspend fun signOut() {
+    suspend fun signOut(logoutOnServer: Boolean = true) {
         state = CredentialState.REVOKING
-        try {
-            auth.logout()
-        } catch (_: Exception) {
+        if (logoutOnServer) {
+            try {
+                auth.logout()
+            } catch (_: Exception) {
+            }
         }
         clearLocal()
     }

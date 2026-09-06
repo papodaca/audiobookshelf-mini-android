@@ -23,6 +23,10 @@ interface SettingsStore {
     fun setLastAuthor(value: String)
     fun getAllowMeteredDownloads(): Boolean
     fun setAllowMeteredDownloads(value: Boolean)
+    fun getLastUsername(origin: String): String
+    fun setLastUsername(origin: String, value: String)
+    fun getLastAuthMode(origin: String): AuthMode?
+    fun setLastAuthMode(origin: String, mode: AuthMode)
 }
 
 class MemorySettingsStore : SettingsStore {
@@ -37,6 +41,8 @@ class MemorySettingsStore : SettingsStore {
     private var lastTitle: String = ""
     private var lastAuthor: String = ""
     private var allowMeteredDownloads: Boolean = false
+    private val lastUsernames = mutableMapOf<String, String>()
+    private val lastAuthModes = mutableMapOf<String, AuthMode>()
 
     override fun getServerUrl(): String = serverUrl
     override fun setServerUrl(value: String) {
@@ -100,5 +106,17 @@ class MemorySettingsStore : SettingsStore {
 
     override fun setAllowMeteredDownloads(value: Boolean) {
         allowMeteredDownloads = value
+    }
+
+    override fun getLastUsername(origin: String): String = lastUsernames[origin].orEmpty()
+
+    override fun setLastUsername(origin: String, value: String) {
+        lastUsernames[origin] = value
+    }
+
+    override fun getLastAuthMode(origin: String): AuthMode? = lastAuthModes[origin]
+
+    override fun setLastAuthMode(origin: String, mode: AuthMode) {
+        lastAuthModes[origin] = mode
     }
 }
