@@ -1,5 +1,3 @@
-@file:OptIn(UnstableApi::class)
-
 package io.github.miniaudiobookshelf.android.player
 
 import android.app.PendingIntent
@@ -48,6 +46,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
+@UnstableApi
 class PlaybackService : MediaLibraryService() {
     internal val serviceJob = SupervisorJob()
     internal val serviceScope = CoroutineScope(serviceJob + Dispatchers.Main.immediate)

@@ -1,5 +1,3 @@
-@file:OptIn(UnstableApi::class)
-
 package io.github.miniaudiobookshelf.android.player
 
 import android.os.Handler
@@ -44,6 +42,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+@UnstableApi
 class PlaybackEngine(
     private val api: ApiClient,
     private val deviceId: String,

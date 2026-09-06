@@ -1,5 +1,3 @@
-@file:OptIn(UnstableApi::class)
-
 package io.github.miniaudiobookshelf.android.player
 
 import android.os.Bundle
@@ -23,6 +21,7 @@ import io.github.miniaudiobookshelf.core.AutoMediaId
 import io.github.miniaudiobookshelf.core.AutoNode
 import kotlinx.coroutines.launch
 
+@UnstableApi
 class AutoLibraryCallback(
     private val service: PlaybackService,
 ) : MediaLibrarySession.Callback {

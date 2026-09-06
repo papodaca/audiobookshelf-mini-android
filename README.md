@@ -8,7 +8,7 @@ This checkout is the scaffold. The app launches an empty Material 3 window. Sign
 
 ## Build
 
-JDK 17+ and the Android SDK with platform 36.
+JDK 25 and the Android SDK with platform 36.
 
 ```bash
 ./gradlew :app:assembleDebug :core:test

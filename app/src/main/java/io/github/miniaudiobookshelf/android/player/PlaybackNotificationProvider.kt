@@ -1,5 +1,3 @@
-@file:OptIn(UnstableApi::class)
-
 package io.github.miniaudiobookshelf.android.player
 
 import android.content.Context
@@ -13,6 +11,7 @@ import androidx.media3.session.SessionCommand
 import com.google.common.collect.ImmutableList
 import io.github.miniaudiobookshelf.android.R
 
+@UnstableApi
 class PlaybackNotificationProvider(
     context: Context,
 ) : DefaultMediaNotificationProvider(

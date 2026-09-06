@@ -1,5 +1,3 @@
-@file:OptIn(UnstableApi::class)
-
 package io.github.miniaudiobookshelf.android.player
 
 import androidx.media3.common.C
@@ -7,6 +5,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
 
+@UnstableApi
 class BookWindowTimeline(
     private val mediaItem: MediaItem,
     private val durationUs: Long,

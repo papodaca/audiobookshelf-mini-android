@@ -46,6 +46,17 @@ class KeystoreSecretStore private constructor(
         }
     }
 
+    internal fun importPlain(origin: String, stored: StoredSecret) {
+        if (readSecret(prefs, origin) != null) return
+        writeSecret(
+            prefs,
+            origin,
+            encrypt(stored.secret),
+            stored.mode,
+            stored.access?.takeIf { it.isNotEmpty() }?.let { encrypt(it) },
+        )
+    }
+
     private fun encrypt(plain: String): String {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, key)
@@ -77,7 +88,7 @@ class KeystoreSecretStore private constructor(
         private const val IV_SIZE = 12
         private const val TAG_BITS = 128
 
-        fun create(context: Context): TokenStore? {
+        fun create(context: Context): KeystoreSecretStore? {
             return try {
                 val key = getOrCreateKey()
                 val prefs = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)

@@ -2,57 +2,18 @@ package io.github.miniaudiobookshelf.android.store
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import io.github.miniaudiobookshelf.core.CredentialMode
 import io.github.miniaudiobookshelf.core.FailingTokenStore
 import io.github.miniaudiobookshelf.core.SecretStoreException
 import io.github.miniaudiobookshelf.core.StoredSecret
 import io.github.miniaudiobookshelf.core.TokenStore
 
-@Suppress("DEPRECATION")
-class EncryptedSecretStore private constructor(
-    private val prefs: SharedPreferences,
-) : TokenStore {
-    override suspend fun save(origin: String, secret: String, mode: CredentialMode, access: String?) {
-        writeSecret(prefs, origin, secret, mode, access)
-    }
-
-    override suspend fun clear(origin: String) {
-        clearSecret(prefs, origin)
-    }
-
-    override suspend fun load(origin: String): StoredSecret? {
-        return readSecret(prefs, origin)
-    }
-
-    companion object {
-        private const val FILE = "mabs_secret_store"
-
-        fun create(context: Context): TokenStore {
-            val app = context.applicationContext
-            openEncrypted(app)?.let { return EncryptedSecretStore(it) }
-            app.deleteSharedPreferences(FILE)
-            openEncrypted(app)?.let { return EncryptedSecretStore(it) }
-            return KeystoreSecretStore.create(app) ?: FailingTokenStore()
-        }
-
-        private fun openEncrypted(context: Context): SharedPreferences? {
-            return try {
-                val masterKey = MasterKey.Builder(context)
-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                    .build()
-                EncryptedSharedPreferences.create(
-                    context,
-                    FILE,
-                    masterKey,
-                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-                )
-            } catch (_: Exception) {
-                null
-            }
-        }
+object EncryptedSecretStore {
+    fun create(context: Context): TokenStore {
+        val app = context.applicationContext
+        val store = KeystoreSecretStore.create(app) ?: return FailingTokenStore()
+        migrateLegacyEncryptedPrefs(app, store)
+        return store
     }
 }
 
