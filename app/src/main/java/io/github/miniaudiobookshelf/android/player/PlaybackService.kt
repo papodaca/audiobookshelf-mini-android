@@ -60,6 +60,7 @@ class PlaybackService : MediaLibraryService() {
     private var lastCoverUrl: String = ""
     private val coverLoader = CoverArtLoader { app().session.coverOkHttpClient() }
     private var carSessionGuard: CarSessionGuard? = null
+    private var blockResumeAfterCar = false
 
     override fun onCreate() {
         super.onCreate()
@@ -73,6 +74,7 @@ class PlaybackService : MediaLibraryService() {
         sessionPlayer.onPlayFromSearch = { query ->
             serviceScope.launch { playFromSearch(query) }
         }
+        sessionPlayer.allowResume = { allowResumeAfterCar() }
         val session = MediaLibrarySession.Builder(this, sessionPlayer, AutoLibraryCallback(this))
             .setSessionActivity(sessionActivity())
             .build()
@@ -143,11 +145,24 @@ class PlaybackService : MediaLibraryService() {
 
     fun noteCarController() {
         carSessionGuard?.markProjection()
+        blockResumeAfterCar = false
     }
 
     fun pauseForCarDisconnect() {
         Log.i(AUTO_TAG, "car disconnected, pause")
+        blockResumeAfterCar = true
         engine?.pause()
+    }
+
+    fun allowResumeAfterCar(): Boolean {
+        if (!blockResumeAfterCar) return true
+        val controller = mediaSession?.controllerForCurrentRequest
+        if (controller != null && controller.packageName == packageName && !isCarController(controller)) {
+            blockResumeAfterCar = false
+            return true
+        }
+        Log.i(AUTO_TAG, "block resume pkg=${controller?.packageName}")
+        return false
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

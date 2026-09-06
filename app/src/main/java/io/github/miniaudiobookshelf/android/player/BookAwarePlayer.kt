@@ -19,6 +19,7 @@ class BookAwarePlayer(
     var engine: PlaybackEngine? = null
     var onPlayItem: ((itemId: String, episodeId: String?, startAt: Double) -> Unit)? = null
     var onPlayFromSearch: ((query: String) -> Unit)? = null
+    var allowResume: () -> Boolean = { true }
 
     private val extraListeners = LinkedHashSet<Player.Listener>()
     private var lastTimelineItemId: String = ""
@@ -82,11 +83,23 @@ class BookAwarePlayer(
     }
 
     override fun play() {
+        if (!allowResume()) {
+            android.util.Log.i(PlaybackService.AUTO_TAG, "play ignored after car disconnect")
+            return
+        }
         engine?.resume()
     }
 
     override fun setPlayWhenReady(playWhenReady: Boolean) {
-        if (playWhenReady) engine?.resume() else engine?.pause()
+        if (playWhenReady) {
+            if (!allowResume()) {
+                android.util.Log.i(PlaybackService.AUTO_TAG, "playWhenReady ignored after car disconnect")
+                return
+            }
+            engine?.resume()
+        } else {
+            engine?.pause()
+        }
     }
 
     override fun prepare() {
@@ -299,6 +312,10 @@ class BookAwarePlayer(
             PlaybackService.AUTO_TAG,
             "play mediaId=${first.mediaId} startMs=$startPositionMs override=$start same=$sameItem pos=${current?.position}",
         )
+        if (!allowResume()) {
+            android.util.Log.i(PlaybackService.AUTO_TAG, "controller play ignored after car disconnect")
+            return
+        }
         if (sameItem) {
             if (start >= 0) {
                 engine?.seekBookTime(start)
