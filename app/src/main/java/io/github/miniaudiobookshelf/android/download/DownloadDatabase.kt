@@ -8,6 +8,8 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "downloads")
@@ -23,15 +25,16 @@ data class DownloadEntity(
     val sidecarPath: String,
     val waitingUnmetered: Boolean,
     val error: String,
+    val addedAt: Long,
     val updatedAt: Long,
 )
 
 @Dao
 interface DownloadDao {
-    @Query("SELECT * FROM downloads ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM downloads ORDER BY addedAt ASC, rowKey ASC")
     fun observeAll(): Flow<List<DownloadEntity>>
 
-    @Query("SELECT * FROM downloads")
+    @Query("SELECT * FROM downloads ORDER BY addedAt ASC, rowKey ASC")
     suspend fun all(): List<DownloadEntity>
 
     @Query("SELECT * FROM downloads WHERE rowKey = :rowKey")
@@ -47,7 +50,16 @@ interface DownloadDao {
     suspend fun deleteAll()
 }
 
-@Database(entities = [DownloadEntity::class], version = 1, exportSchema = false)
+@Database(entities = [DownloadEntity::class], version = 2, exportSchema = false)
 abstract class DownloadDatabase : RoomDatabase() {
     abstract fun dao(): DownloadDao
+
+    companion object {
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE downloads ADD COLUMN addedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE downloads SET addedAt = updatedAt WHERE addedAt = 0")
+            }
+        }
+    }
 }
