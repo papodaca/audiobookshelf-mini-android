@@ -113,10 +113,18 @@ class DownloadRepository(
     }
 
     suspend fun upsert(record: DownloadRecord) {
-        dao.upsert(record.toEntity())
+        val key = MemoryDownloadCatalog.catalogKey(record.itemId, record.episodeId)
+        val existing = record(record.itemId, record.episodeId) ?: dao.get(key)?.toRecord()
+        val addedAt = when {
+            existing != null && existing.addedAt > 0 -> existing.addedAt
+            record.addedAt > 0 -> record.addedAt
+            else -> record.updatedAt.takeIf { it > 0 } ?: System.currentTimeMillis()
+        }
+        val stored = record.copy(addedAt = addedAt)
+        dao.upsert(stored.toEntity())
         cache.update { current ->
-            val without = current.filterNot { it.itemId == record.itemId && it.episodeId == record.episodeId }
-            (listOf(record) + without).sortedByDescending { it.updatedAt }
+            val without = current.filterNot { it.itemId == stored.itemId && it.episodeId == stored.episodeId }
+            (without + stored).sortedWith(compareBy({ it.addedAt }, { it.itemId }, { it.episodeId }))
         }
     }
 
@@ -217,6 +225,7 @@ private fun DownloadRecord.toEntity(): DownloadEntity = DownloadEntity(
     sidecarPath = sidecarPath,
     waitingUnmetered = waitingUnmetered,
     error = error,
+    addedAt = addedAt,
     updatedAt = updatedAt,
 )
 
@@ -235,5 +244,6 @@ private fun DownloadEntity.toRecord(): DownloadRecord = DownloadRecord(
     sidecarPath = sidecarPath,
     waitingUnmetered = waitingUnmetered,
     error = error,
+    addedAt = addedAt,
     updatedAt = updatedAt,
 )

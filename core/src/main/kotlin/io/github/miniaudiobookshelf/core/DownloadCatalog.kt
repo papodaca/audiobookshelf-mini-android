@@ -29,6 +29,7 @@ data class DownloadRecord(
     val sidecarPath: String = "",
     val waitingUnmetered: Boolean = false,
     val error: String = "",
+    val addedAt: Long = 0,
     val updatedAt: Long = 0,
     val currentTime: Double = 0.0,
     val duration: Double = 0.0,
