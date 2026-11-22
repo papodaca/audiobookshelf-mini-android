@@ -27,6 +27,10 @@ interface SettingsStore {
     fun setLastUsername(origin: String, value: String)
     fun getLastAuthMode(origin: String): AuthMode?
     fun setLastAuthMode(origin: String, mode: AuthMode)
+
+    /** Serialized Up next queue (see QueueCodec); empty when no queue is stored. */
+    fun getQueueEntries(): String = ""
+    fun setQueueEntries(value: String) {}
 }
 
 class MemorySettingsStore : SettingsStore {
@@ -41,6 +45,7 @@ class MemorySettingsStore : SettingsStore {
     private var lastTitle: String = ""
     private var lastAuthor: String = ""
     private var allowMeteredDownloads: Boolean = false
+    private var queueEntries: String = ""
     private val lastUsernames = mutableMapOf<String, String>()
     private val lastAuthModes = mutableMapOf<String, AuthMode>()
 
@@ -118,5 +123,11 @@ class MemorySettingsStore : SettingsStore {
 
     override fun setLastAuthMode(origin: String, mode: AuthMode) {
         lastAuthModes[origin] = mode
+    }
+
+    override fun getQueueEntries(): String = queueEntries
+
+    override fun setQueueEntries(value: String) {
+        queueEntries = value
     }
 }
