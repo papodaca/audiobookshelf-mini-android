@@ -71,6 +71,7 @@ class PlaybackEngine(
     private var pendingSeek = -1.0
     private var suppressPosition = false
     private var stallAutoRetry = false
+    private var focusPaused = false
     private var reopenScheduled = false
     private var stallRetryJob: Job? = null
     private var positionJob: Job? = null
@@ -187,6 +188,7 @@ class PlaybackEngine(
 
     fun resume() {
         hop {
+            focusPaused = false
             stateHolder.update { it.copy(intended = IntendedState.PLAYING, stalled = false, statusMessage = "") }
             player.play()
         }
@@ -197,6 +199,7 @@ class PlaybackEngine(
             hopWait {
                 cancelStallRetry()
                 stall.reset()
+                focusPaused = false
                 stateHolder.update { it.copy(intended = IntendedState.STOPPED) }
                 stopPositionTimer()
                 player.stop()
@@ -590,7 +593,11 @@ class PlaybackEngine(
         if (current.pipeline == PipelineState.ERROR || transitionInFlight) return
         val now = SystemClock.elapsedRealtime() / 1000.0
         val playing = current.intended == IntendedState.PLAYING
-        applyStall(stall.sample(book, playing, now, suppressed))
+        // Never stall-detect while the player itself is not trying to play
+        // (e.g. paused by an audio-focus loss): the position is frozen on
+        // purpose, and "recovering" would steal focus back from the app
+        // the user switched to.
+        applyStall(stall.sample(book, playing, now, suppressed || !player.playWhenReady))
         if (sleep.isActive) {
             if (playing && sleep.shouldPause(SystemClock.elapsedRealtime(), book)) {
                 sleep.clear()
@@ -780,6 +787,20 @@ class PlaybackEngine(
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             hop {
+                if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS) {
+                    // Another app (e.g. YouTube Music) took audio focus and
+                    // ExoPlayer paused itself. Adopt that as a real pause:
+                    // without this, intended stayed PLAYING, the stall
+                    // detector saw a frozen position, and its auto-retry
+                    // restarted the book a few seconds later, pausing the
+                    // other app. A transient loss auto-resumes on focus
+                    // gain; the flag below lets that restore PLAYING too.
+                    focusPaused = true
+                    pause()
+                } else if (playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_GAIN && focusPaused) {
+                    focusPaused = false
+                    stateHolder.update { it.copy(intended = IntendedState.PLAYING) }
+                }
                 if (stateHolder.value.pipeline == PipelineState.BUFFERING) return@hop
                 stateHolder.update {
                     it.copy(pipeline = if (playWhenReady) PipelineState.PLAYING else PipelineState.PAUSED)
