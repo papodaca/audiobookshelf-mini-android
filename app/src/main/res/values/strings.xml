@@ -81,6 +81,7 @@
     <string name="download_notification_title">Downloading</string>
     <string name="download_channel">Downloads</string>
     <string name="downloads_empty">Nothing downloaded</string>
+    <string name="downloads_total">%1$d downloaded · %2$s</string>
     <string name="downloads_empty_body">Downloads you keep stay on this phone and play without a network.</string>
     <string name="allow_metered_downloads">Allow downloads on cellular</string>
     <string name="sign_out_downloads_body">Keep downloaded files on this phone, or delete them? Keep is the default. Play still needs a sign-in.</string>
