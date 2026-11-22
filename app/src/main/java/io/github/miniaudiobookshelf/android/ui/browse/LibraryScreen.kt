@@ -15,9 +15,14 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -85,6 +90,16 @@ fun LibraryScreen(
                         item = item,
                         coverUrl = browse.coverUrl(item.id),
                         onClick = { browse.openDetail(item) },
+                        onPlay = if (item.playable) {
+                            {
+                                browse.play(
+                                    item,
+                                    startOver = ViewLogic.playDecision(item) == ViewLogic.PlayDecision.START_OVER,
+                                )
+                            }
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -134,6 +149,7 @@ private fun CoverTile(
     item: LibraryItem,
     coverUrl: String,
     onClick: () -> Unit,
+    onPlay: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val badge = ViewLogic.seriesBadge(item)
@@ -170,6 +186,17 @@ private fun CoverTile(
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.labelMedium,
                     )
+                }
+            }
+            if (onPlay != null) {
+                FilledIconButton(
+                    onClick = onPlay,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(6.dp)
+                        .size(40.dp),
+                ) {
+                    Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.play))
                 }
             }
         }
