@@ -44,6 +44,9 @@ data class PlayerState(
     val stalled: Boolean = false,
     val conflict: PlaybackConflict? = null,
     val finished: Boolean = false,
+    val sleepTimerActive: Boolean = false,
+    val sleepEndOfChapter: Boolean = false,
+    val sleepRemainingSeconds: Long? = null,
 ) {
     val hasChapters: Boolean get() = timeline?.hasChapters == true
 

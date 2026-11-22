@@ -98,6 +98,18 @@ class PlaybackCommands(
         }
     }
 
+    override fun setSleepTimerMinutes(minutes: Int) {
+        engine?.setSleepTimerMinutes(minutes)
+    }
+
+    override fun setSleepTimerEndOfChapter() {
+        engine?.setSleepTimerEndOfChapter()
+    }
+
+    override fun clearSleepTimer() {
+        engine?.clearSleepTimer()
+    }
+
     override fun retry() {
         engine?.retry()
     }
