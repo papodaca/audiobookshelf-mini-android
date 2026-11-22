@@ -31,6 +31,7 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
     private var lastTitle: String = ""
     private var lastAuthor: String = ""
     private var allowMeteredDownloads: Boolean = false
+    private var queueEntries: String = ""
     private val lastUsernames = mutableMapOf<String, String>()
     private val lastAuthModes = mutableMapOf<String, AuthMode>()
 
@@ -47,6 +48,7 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         lastTitle = prefs[LAST_TITLE].orEmpty()
         lastAuthor = prefs[LAST_AUTHOR].orEmpty()
         allowMeteredDownloads = prefs[ALLOW_METERED] ?: false
+        queueEntries = prefs[QUEUE_ENTRIES].orEmpty()
         for ((key, value) in prefs.asMap()) {
             val name = key.name
             val text = value as? String ?: continue
@@ -147,6 +149,13 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         persist { it[ALLOW_METERED] = value }
     }
 
+    override fun getQueueEntries(): String = synchronized(lock) { queueEntries }
+
+    override fun setQueueEntries(value: String) {
+        synchronized(lock) { queueEntries = value }
+        persist { it[QUEUE_ENTRIES] = value }
+    }
+
     override fun getLastUsername(origin: String): String = synchronized(lock) {
         lastUsernames[origin].orEmpty()
     }
@@ -183,6 +192,7 @@ class DataStoreSettingsStore(context: Context) : SettingsStore {
         private val LAST_TITLE = stringPreferencesKey("last_title")
         private val LAST_AUTHOR = stringPreferencesKey("last_author")
         private val ALLOW_METERED = booleanPreferencesKey("allow_metered_downloads")
+        private val QUEUE_ENTRIES = stringPreferencesKey("queue_entries")
         private const val LAST_USERNAME_PREFIX = "last_username."
         private const val LAST_AUTH_MODE_PREFIX = "last_auth_mode."
 

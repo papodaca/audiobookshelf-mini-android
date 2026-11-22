@@ -20,6 +20,7 @@ import io.github.miniaudiobookshelf.core.LibraryItem
 import io.github.miniaudiobookshelf.core.PinPrompt
 import io.github.miniaudiobookshelf.core.PlaybackQueue
 import io.github.miniaudiobookshelf.core.PlaybackStarter
+import io.github.miniaudiobookshelf.core.QueueCodec
 import io.github.miniaudiobookshelf.core.ServerUrl
 import io.github.miniaudiobookshelf.core.SettingsStore
 import io.github.miniaudiobookshelf.core.TokenProvider
@@ -59,6 +60,18 @@ class SessionController(
     private var connectReason: ConnectReason = ConnectReason.NONE
     private val queue = PlaybackQueue()
     var downloads: DownloadCatalog = EmptyDownloadCatalog
+
+    init {
+        // Persist the Up next queue so it survives process death: restore
+        // what was stored, then write through on every queue change.
+        // Sign-out clears the queue, which persists as empty the same way.
+        queue.restore(QueueCodec.decode(settings.getQueueEntries()))
+        scope.launch {
+            queue.entries.collect { entries ->
+                settings.setQueueEntries(QueueCodec.encode(entries))
+            }
+        }
+    }
     var onSignOutDownloads: ((delete: Boolean) -> Unit)? = null
     var onSignedIn: (() -> Unit)? = null
     var userAccess: UserAccess = UserAccess()
