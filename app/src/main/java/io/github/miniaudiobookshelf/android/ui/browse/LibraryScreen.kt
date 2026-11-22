@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -188,6 +189,18 @@ private fun CoverTile(
                     )
                 }
             }
+            val progressFraction = ViewLogic.progressFraction(item)
+            if (item.progress?.isFinished != true && progressFraction > 0.0 && progressFraction < 1.0) {
+                LinearProgressIndicator(
+                    progress = { progressFraction.toFloat() },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)),
+                    trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
+                )
+            }
             if (onPlay != null) {
                 FilledIconButton(
                     onClick = onPlay,
@@ -209,21 +222,6 @@ private fun CoverTile(
         if (item.author.isNotEmpty()) {
             Text(
                 text = item.author,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        val progressSummary = ViewLogic.progressSummary(item)
-        val progressFraction = ViewLogic.progressFraction(item)
-        if (progressSummary != null && item.progress?.isFinished != true && progressFraction > 0.0 && progressFraction < 1.0) {
-            LinearProgressIndicator(
-                progress = { progressFraction.toFloat() },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                text = progressSummary,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
