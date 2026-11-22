@@ -797,7 +797,12 @@ class PlaybackEngine(
                     // gain; the flag below lets that restore PLAYING too.
                     focusPaused = true
                     pause()
-                } else if (playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_GAIN && focusPaused) {
+                } else if (playWhenReady && focusPaused) {
+                    // The player resumed on its own — the transient focus
+                    // loss ended and ExoPlayer regained focus. (Media3 has
+                    // no AUDIO_FOCUS_GAIN reason constant; any playWhenReady
+                    // return while focusPaused is that regain, since user
+                    // resumes come through resume(), which clears the flag.)
                     focusPaused = false
                     stateHolder.update { it.copy(intended = IntendedState.PLAYING) }
                 }
