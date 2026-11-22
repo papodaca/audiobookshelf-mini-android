@@ -8,6 +8,7 @@ import io.github.miniaudiobookshelf.core.DownloadCatalog
 import io.github.miniaudiobookshelf.core.EmptyDownloadCatalog
 import io.github.miniaudiobookshelf.core.Library
 import io.github.miniaudiobookshelf.core.LibraryItem
+import io.github.miniaudiobookshelf.core.Models
 import io.github.miniaudiobookshelf.core.PlaybackQueue
 import io.github.miniaudiobookshelf.core.PlaybackStarter
 import io.github.miniaudiobookshelf.core.QueueAppendResult
@@ -269,13 +270,14 @@ class BrowseController(
         val job = scope.launch {
             _ui.update { it.copy(loading = true, error = null, searching = false) }
             try {
-                val items = withContext(Dispatchers.IO) {
+                val fetched = withContext(Dispatchers.IO) {
                     if (ViewLogic.isPodcastLibrary(library)) {
                         api.fetchRecentEpisodes(library.id, 50).results
                     } else {
                         api.fetchInProgress(library.id, 25).results
                     }
                 }
+                val items = withProgress(fetched)
                 _ui.update { it.copy(items = items, loading = false, empty = items.isEmpty(), error = null) }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -289,12 +291,29 @@ class BrowseController(
         return job
     }
 
+    /**
+     * List payloads carry no progress object, so attach the user's progress
+     * from /api/me/progress (the same source DownloadController uses).
+     * A failed progress fetch just leaves the items without progress.
+     */
+    private suspend fun withProgress(items: List<LibraryItem>): List<LibraryItem> {
+        if (items.isEmpty() || items.all { it.progress != null }) return items
+        val all = try {
+            withContext(Dispatchers.IO) { api.fetchAllProgress() }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return items
+        }
+        return Models.attachProgress(items, all)
+    }
+
     private suspend fun search(library: Library, query: String) {
         homeJob?.cancel()
         _ui.update { it.copy(loading = true, error = null, searching = true) }
         try {
             val json = withContext(Dispatchers.IO) { api.search(library.id, query) }
-            val hits = ViewLogic.searchHits(json, ViewLogic.searchMediaKey(library))
+            val hits = withProgress(ViewLogic.searchHits(json, ViewLogic.searchMediaKey(library)))
             if (_ui.value.query != query) return
             _ui.update { it.copy(items = hits, loading = false, empty = hits.isEmpty(), error = null) }
         } catch (e: kotlinx.coroutines.CancellationException) {

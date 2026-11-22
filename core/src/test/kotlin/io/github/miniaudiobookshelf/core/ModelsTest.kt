@@ -202,4 +202,26 @@ class ModelsTest {
         assertEquals("item-2", wrapped[0].libraryItemId)
         assertEquals(8.0, wrapped[0].currentTime)
     }
+
+    @Test
+    fun attachProgressFillsMissingByItemAndEpisode() {
+        val book = LibraryItem(id = "item-1")
+        val episode = LibraryItem(id = "show", episodeId = "ep-1", mediaType = "podcast")
+        val untouched = LibraryItem(id = "item-2")
+        val already = LibraryItem(
+            id = "item-3",
+            progress = MediaProgress(libraryItemId = "item-3", currentTime = 5.0, duration = 50.0),
+        )
+        val all = listOf(
+            MediaProgress(libraryItemId = "item-1", currentTime = 90.0, duration = 300.0, progress = 0.3),
+            MediaProgress(libraryItemId = "show", episodeId = "ep-1", currentTime = 15.0, duration = 60.0, progress = 0.25),
+            MediaProgress(libraryItemId = "item-3", currentTime = 99.0, duration = 100.0, progress = 0.99),
+        )
+        val out = Models.attachProgress(listOf(book, episode, untouched, already), all)
+        assertEquals(90.0, out[0].progress?.currentTime)
+        assertEquals(15.0, out[1].progress?.currentTime)
+        assertNull(out[2].progress)
+        // Existing progress is never overwritten.
+        assertEquals(5.0, out[3].progress?.currentTime)
+    }
 }
