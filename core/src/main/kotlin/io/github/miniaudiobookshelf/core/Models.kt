@@ -205,6 +205,9 @@ interface PlaybackStarter {
     fun previousChapter() {}
     fun nextChapter() {}
     fun setRate(rate: Double) {}
+    fun setSleepTimerMinutes(minutes: Int) {}
+    fun setSleepTimerEndOfChapter() {}
+    fun clearSleepTimer() {}
     fun retry() {}
     fun playingItemId(): String = ""
     fun playingEpisodeId(): String = ""

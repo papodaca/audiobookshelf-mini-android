@@ -51,6 +51,7 @@ import io.github.miniaudiobookshelf.android.R
 import io.github.miniaudiobookshelf.android.player.IntendedState
 import io.github.miniaudiobookshelf.android.player.PlayerState
 import io.github.miniaudiobookshelf.core.PlaybackStarter
+import io.github.miniaudiobookshelf.core.SleepTimerPolicy
 import io.github.miniaudiobookshelf.core.ViewLogic
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,6 +67,7 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     var speedOpen by remember { mutableStateOf(false) }
+    var sleepOpen by remember { mutableStateOf(false) }
     var scrub by remember { mutableStateOf<Float?>(null) }
     val duration = state.duration.coerceAtLeast(0.0)
     val displayed = (scrub ?: state.position.toFloat()).toDouble().coerceIn(0.0, duration.coerceAtLeast(0.0))
@@ -207,6 +209,46 @@ fun PlayerScreen(
                             onClick = {
                                 playback.setRate(rate)
                                 speedOpen = false
+                            },
+                        )
+                    }
+                }
+                TextButton(onClick = { sleepOpen = true }) {
+                    Text(
+                        when {
+                            !state.sleepTimerActive -> stringResource(R.string.sleep_timer)
+                            state.sleepEndOfChapter -> stringResource(R.string.sleep_chapter_end)
+                            state.sleepRemainingSeconds != null ->
+                                stringResource(R.string.sleep_remaining, ViewLogic.formatClock(state.sleepRemainingSeconds.toDouble()))
+                            else -> stringResource(R.string.sleep_timer)
+                        },
+                    )
+                }
+                DropdownMenu(expanded = sleepOpen, onDismissRequest = { sleepOpen = false }) {
+                    if (state.sleepTimerActive) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.sleep_off)) },
+                            onClick = {
+                                playback.clearSleepTimer()
+                                sleepOpen = false
+                            },
+                        )
+                    }
+                    SleepTimerPolicy.PRESET_MINUTES.forEach { minutes ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.sleep_minutes, minutes)) },
+                            onClick = {
+                                playback.setSleepTimerMinutes(minutes)
+                                sleepOpen = false
+                            },
+                        )
+                    }
+                    if (state.hasChapters) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.sleep_end_of_chapter)) },
+                            onClick = {
+                                playback.setSleepTimerEndOfChapter()
+                                sleepOpen = false
                             },
                         )
                     }

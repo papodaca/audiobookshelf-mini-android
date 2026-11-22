@@ -24,6 +24,7 @@ import io.github.miniaudiobookshelf.core.LocalMediaMetadata
 import io.github.miniaudiobookshelf.core.LocalPlaybackSession
 import io.github.miniaudiobookshelf.core.PlaybackError
 import io.github.miniaudiobookshelf.core.SettingsStore
+import io.github.miniaudiobookshelf.core.SleepTimerPolicy
 import io.github.miniaudiobookshelf.core.StallDecision
 import io.github.miniaudiobookshelf.core.StallPolicy
 import io.github.miniaudiobookshelf.core.TrackUriResolver
@@ -74,6 +75,7 @@ class PlaybackEngine(
     private var stallRetryJob: Job? = null
     private var positionJob: Job? = null
     private val stall = StallPolicy()
+    private val sleep = SleepTimerPolicy()
     private val listener = EngineListener()
 
     init {
@@ -139,8 +141,47 @@ class PlaybackEngine(
         hop {
             cancelStallRetry()
             stallAutoRetry = false
+            // Documented behaviour: any pause cancels the sleep timer.
+            if (sleep.isActive) {
+                sleep.clear()
+                publishSleepState()
+            }
             stateHolder.update { it.copy(intended = IntendedState.PAUSED) }
             player.pause()
+        }
+    }
+
+    fun setSleepTimerMinutes(minutes: Int) {
+        hop {
+            sleep.setMinutes(minutes, SystemClock.elapsedRealtime())
+            publishSleepState()
+        }
+    }
+
+    fun setSleepTimerEndOfChapter() {
+        hop {
+            val current = stateHolder.value
+            val timeline = current.timeline ?: return@hop
+            sleep.setEndOfChapter(timeline, current.position)
+            publishSleepState()
+        }
+    }
+
+    fun clearSleepTimer() {
+        hop {
+            sleep.clear()
+            publishSleepState()
+        }
+    }
+
+    private fun publishSleepState() {
+        val remaining = sleep.remainingMs(SystemClock.elapsedRealtime())?.let { (it + 999) / 1000 }
+        stateHolder.update {
+            it.copy(
+                sleepTimerActive = sleep.isActive,
+                sleepEndOfChapter = sleep.isEndOfChapter,
+                sleepRemainingSeconds = remaining,
+            )
         }
     }
 
@@ -236,6 +277,10 @@ class PlaybackEngine(
         }
         if (transitionInFlight) return
         cancelStallRetry()
+        if (sleep.isActive) {
+            sleep.clear()
+            hopWait { publishSleepState() }
+        }
         if (!stallAutoRetry) stall.reset()
         stallAutoRetry = false
         transitionInFlight = true
@@ -546,6 +591,18 @@ class PlaybackEngine(
         val now = SystemClock.elapsedRealtime() / 1000.0
         val playing = current.intended == IntendedState.PLAYING
         applyStall(stall.sample(book, playing, now, suppressed))
+        if (sleep.isActive) {
+            if (playing && sleep.shouldPause(SystemClock.elapsedRealtime(), book)) {
+                sleep.clear()
+                publishSleepState()
+                pause()
+            } else {
+                val remaining = sleep.remainingMs(SystemClock.elapsedRealtime())?.let { (it + 999) / 1000 }
+                if (remaining != stateHolder.value.sleepRemainingSeconds) {
+                    stateHolder.update { it.copy(sleepRemainingSeconds = remaining) }
+                }
+            }
+        }
     }
 
     private fun applyStall(decision: StallDecision) {
