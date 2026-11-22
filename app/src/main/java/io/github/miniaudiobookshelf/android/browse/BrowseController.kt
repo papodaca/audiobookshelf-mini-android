@@ -46,6 +46,24 @@ class BrowseController(
 
     fun coverUrl(itemId: String): String = coverUrls.getOrPut(itemId) { api.coverUrl(itemId) }
 
+    fun refresh() {
+        if (_ui.value.refreshing || _ui.value.detail != null) return
+        val library = _ui.value.selected
+        if (library == null) {
+            scope.launch { loadLibraries() }
+            return
+        }
+        _ui.update { it.copy(refreshing = true) }
+        val query = _ui.value.query
+        val job = if (query.isNotBlank()) {
+            searchJob?.cancel()
+            scope.launch { search(library, query) }.also { searchJob = it }
+        } else {
+            loadHome(library)
+        }
+        job.invokeOnCompletion { _ui.update { it.copy(refreshing = false) } }
+    }
+
     fun retry() {
         val detail = _ui.value.detail
         if (detail != null) {
@@ -246,9 +264,9 @@ class BrowseController(
         }
     }
 
-    private fun loadHome(library: Library) {
+    private fun loadHome(library: Library): Job {
         homeJob?.cancel()
-        homeJob = scope.launch {
+        val job = scope.launch {
             _ui.update { it.copy(loading = true, error = null, searching = false) }
             try {
                 val items = withContext(Dispatchers.IO) {
@@ -267,6 +285,8 @@ class BrowseController(
                 _ui.update { it.copy(loading = false, error = "Couldn't load library") }
             }
         }
+        homeJob = job
+        return job
     }
 
     private suspend fun search(library: Library, query: String) {
@@ -296,6 +316,7 @@ data class BrowseUi(
     val searching: Boolean = false,
     val searchOpen: Boolean = false,
     val loading: Boolean = false,
+    val refreshing: Boolean = false,
     val empty: Boolean = false,
     val error: String? = null,
     val detail: LibraryItem? = null,
