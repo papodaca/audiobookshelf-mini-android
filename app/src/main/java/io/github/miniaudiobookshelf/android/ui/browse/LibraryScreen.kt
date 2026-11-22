@@ -215,6 +215,21 @@ private fun CoverTile(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        val progressSummary = ViewLogic.progressSummary(item)
+        val progressFraction = ViewLogic.progressFraction(item)
+        if (progressSummary != null && item.progress?.isFinished != true && progressFraction > 0.0 && progressFraction < 1.0) {
+            LinearProgressIndicator(
+                progress = { progressFraction.toFloat() },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                text = progressSummary,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (!item.playable) {
             Text(
                 text = stringResource(R.string.no_audio),
