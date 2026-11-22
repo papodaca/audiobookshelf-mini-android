@@ -60,6 +60,12 @@
     <string name="previous_chapter">Previous chapter</string>
     <string name="next_chapter">Next chapter</string>
     <string name="chapters">Chapters</string>
+    <string name="sleep_timer">Sleep timer</string>
+    <string name="sleep_off">Off</string>
+    <string name="sleep_minutes">%1$d minutes</string>
+    <string name="sleep_end_of_chapter">End of chapter</string>
+    <string name="sleep_remaining">Sleep · %1$s left</string>
+    <string name="sleep_chapter_end">Sleep · chapter end</string>
     <string name="clear_queue">Clear</string>
     <string name="queue_empty">Nothing queued.</string>
     <string name="move_up">Move up</string>
@@ -81,6 +87,7 @@
     <string name="download_notification_title">Downloading</string>
     <string name="download_channel">Downloads</string>
     <string name="downloads_empty">Nothing downloaded</string>
+    <string name="downloads_total">%1$d downloaded · %2$s</string>
     <string name="downloads_empty_body">Downloads you keep stay on this phone and play without a network.</string>
     <string name="allow_metered_downloads">Allow downloads on cellular</string>
     <string name="sign_out_downloads_body">Keep downloaded files on this phone, or delete them? Keep is the default. Play still needs a sign-in.</string>

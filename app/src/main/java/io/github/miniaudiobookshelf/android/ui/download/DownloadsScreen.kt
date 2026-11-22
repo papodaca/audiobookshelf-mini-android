@@ -44,6 +44,7 @@ import io.github.miniaudiobookshelf.core.DownloadRecord
 import io.github.miniaudiobookshelf.core.DownloadStatus
 import io.github.miniaudiobookshelf.core.LibraryItem
 import io.github.miniaudiobookshelf.core.MediaProgress
+import io.github.miniaudiobookshelf.core.ViewLogic
 
 @Composable
 fun DownloadsScreen(
@@ -72,6 +73,19 @@ fun DownloadsScreen(
                     allowMetered = checked
                     downloads.setAllowMetered(checked)
                 },
+            )
+        }
+        val completeCount = records.count { it.complete }
+        if (completeCount > 0) {
+            Text(
+                text = stringResource(
+                    R.string.downloads_total,
+                    completeCount,
+                    ViewLogic.formatBytes(ViewLogic.completedDownloadBytes(records)),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
         }
         if (records.isEmpty()) {
@@ -211,18 +225,9 @@ private fun statusLabel(row: DownloadRecord): String {
 }
 
 private fun byteLabel(row: DownloadRecord): String {
-    val done = formatBytes(row.bytesDownloaded)
-    val total = formatBytes(row.bytesTotal)
+    val done = ViewLogic.formatBytes(row.bytesDownloaded)
+    val total = ViewLogic.formatBytes(row.bytesTotal)
     return if (row.bytesTotal > 0) "$done / $total" else done
-}
-
-private fun formatBytes(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val kb = bytes / 1024.0
-    if (kb < 1024) return String.format("%.1f KB", kb)
-    val mb = kb / 1024.0
-    if (mb < 1024) return String.format("%.1f MB", mb)
-    return String.format("%.2f GB", mb / 1024.0)
 }
 
 fun DownloadRecord.toLibraryItem(): LibraryItem {

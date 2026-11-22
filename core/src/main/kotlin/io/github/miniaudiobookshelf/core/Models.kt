@@ -190,8 +190,60 @@ class PlaybackQueue {
         publish()
     }
 
+    /** Replace the queue with restored entries, dropping blanks and duplicates. */
+    @Synchronized
+    fun restore(entries: List<QueueEntry>) {
+        items.clear()
+        for (entry in entries) {
+            if (entry.episodeId.isEmpty()) continue
+            if (items.any { it.itemId == entry.itemId && it.episodeId == entry.episodeId }) continue
+            items.add(entry)
+        }
+        publish()
+    }
+
     private fun publish() {
         _entries.value = items.toList()
+    }
+}
+
+/** JSON round-trip for persisting the Up next queue in the settings store. */
+object QueueCodec {
+    fun encode(entries: List<QueueEntry>): String {
+        val array = JsonArray(
+            entries.map { entry ->
+                JsonObject(
+                    mapOf(
+                        "itemId" to JsonPrimitive(entry.itemId),
+                        "episodeId" to JsonPrimitive(entry.episodeId),
+                        "title" to JsonPrimitive(entry.title),
+                        "showTitle" to JsonPrimitive(entry.showTitle),
+                    ),
+                )
+            },
+        )
+        return array.toString()
+    }
+
+    fun decode(raw: String): List<QueueEntry> {
+        if (raw.isBlank()) return emptyList()
+        val root = try {
+            ApiClient.json.parseToJsonElement(raw) as? JsonArray
+        } catch (_: Exception) {
+            null
+        } ?: return emptyList()
+        return root.mapNotNull { el ->
+            val obj = el as? JsonObject ?: return@mapNotNull null
+            val itemId = obj["itemId"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val episodeId = obj["episodeId"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (itemId.isEmpty() || episodeId.isEmpty()) return@mapNotNull null
+            QueueEntry(
+                itemId = itemId,
+                episodeId = episodeId,
+                title = obj["title"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                showTitle = obj["showTitle"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+            )
+        }
     }
 }
 
@@ -205,6 +257,9 @@ interface PlaybackStarter {
     fun previousChapter() {}
     fun nextChapter() {}
     fun setRate(rate: Double) {}
+    fun setSleepTimerMinutes(minutes: Int) {}
+    fun setSleepTimerEndOfChapter() {}
+    fun clearSleepTimer() {}
     fun retry() {}
     fun playingItemId(): String = ""
     fun playingEpisodeId(): String = ""

@@ -109,6 +109,30 @@ class PlaybackQueueTest {
         assertFalse(queue.contains("show", "a"))
         assertTrue(queue.entries.value.isEmpty())
     }
+
+    @Test
+    fun codecRoundTrip() {
+        val entries = listOf(entry("a"), entry("b"))
+        assertEquals(entries, QueueCodec.decode(QueueCodec.encode(entries)))
+        assertEquals(emptyList<QueueEntry>(), QueueCodec.decode(""))
+        assertEquals(emptyList<QueueEntry>(), QueueCodec.decode("not json"))
+        assertEquals(emptyList<QueueEntry>(), QueueCodec.decode("{}"))
+    }
+
+    @Test
+    fun restoreDropsBlanksAndDuplicates() {
+        val queue = PlaybackQueue()
+        queue.restore(
+            listOf(
+                entry("a"),
+                entry("a"),
+                QueueEntry(itemId = "show", episodeId = ""),
+                entry("b"),
+            ),
+        )
+        assertEquals(2, queue.size)
+        assertEquals(listOf("a", "b"), queue.snapshot().map { it.episodeId })
+    }
 }
 
 private fun entry(id: String) = QueueEntry(

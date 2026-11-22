@@ -152,6 +152,27 @@ class SettingsStoreMemoryTest {
     }
 }
 
+class DownloadTotalsTest {
+    @Test
+    fun formatBytesUnits() {
+        assertEquals("512 B", ViewLogic.formatBytes(512))
+        assertEquals("1.5 KB", ViewLogic.formatBytes(1536))
+        assertEquals("2.0 MB", ViewLogic.formatBytes(2L * 1024 * 1024))
+        assertEquals("1.50 GB", ViewLogic.formatBytes(1536L * 1024 * 1024))
+    }
+
+    @Test
+    fun completedBytesCountsOnlyComplete() {
+        val records = listOf(
+            DownloadRecord(itemId = "a", status = DownloadStatus.COMPLETE, bytesDownloaded = 100, bytesTotal = 100),
+            DownloadRecord(itemId = "b", status = DownloadStatus.RUNNING, bytesDownloaded = 50, bytesTotal = 200),
+            DownloadRecord(itemId = "c", status = DownloadStatus.COMPLETE, bytesDownloaded = 300, bytesTotal = 300),
+        )
+        assertEquals(400L, ViewLogic.completedDownloadBytes(records))
+        assertEquals(0L, ViewLogic.completedDownloadBytes(emptyList()))
+    }
+}
+
 class TrustStoreTest {
     @Test
     fun pinMatchesExactPem() {
