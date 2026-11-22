@@ -84,14 +84,20 @@ class PlaybackEngine(
         stateHolder.update { it.copy(rate = saved) }
     }
 
-    fun playItem(itemId: String, episodeId: String?, startOverride: Double) {
-        scope.launch { playItemInternal(itemId, episodeId, startOverride) }
+    fun playItem(itemId: String, episodeId: String?, startOverride: Double, autoplay: Boolean = true) {
+        scope.launch { playItemInternal(itemId, episodeId, startOverride, autoplay) }
     }
 
     fun reopenSession() {
         val current = stateHolder.value
         if (current.itemId.isEmpty()) return
-        playItem(current.itemId, current.episodeId.ifEmpty { null }, current.position)
+        // Reopening re-establishes a dead server session so sync can
+        // continue; it must not change what the user hears. A book the
+        // user paused stays paused — only a book that was playing
+        // autoplays. (Previously this restarted a paused book audibly
+        // when the pause-flush hit a 404 and SyncDriver reopened.)
+        val autoplay = current.intended == IntendedState.PLAYING
+        playItem(current.itemId, current.episodeId.ifEmpty { null }, current.position, autoplay)
     }
 
     fun seekBookTime(bookTime: Double) {
@@ -265,7 +271,7 @@ class PlaybackEngine(
         cancelStallRetry()
     }
 
-    private suspend fun playItemInternal(itemId: String, episodeId: String?, startOverride: Double) {
+    private suspend fun playItemInternal(itemId: String, episodeId: String?, startOverride: Double, autoplay: Boolean = true) {
         val current = stateHolder.value
         val sameItem = current.itemId == itemId &&
             current.episodeId == episodeId.orEmpty() &&
@@ -290,7 +296,7 @@ class PlaybackEngine(
                     it.copy(
                         itemId = itemId,
                         episodeId = episodeId.orEmpty(),
-                        intended = IntendedState.PLAYING,
+                        intended = if (autoplay) IntendedState.PLAYING else IntendedState.PAUSED,
                         pipeline = PipelineState.BUFFERING,
                         statusMessage = "",
                         retryAvailable = false,
@@ -324,20 +330,20 @@ class PlaybackEngine(
             when (mode) {
                 DownloadPolicy.PlayMode.LIVE_LOCAL, DownloadPolicy.PlayMode.LIVE_STREAM -> {
                     try {
-                        openSession(itemId, episodeId, startOverride, useLocal = complete)
+                        openSession(itemId, episodeId, startOverride, useLocal = complete, autoplay = autoplay)
                     } catch (e: PlaybackError.TranscodeOnly) {
                         if (!DownloadPolicy.fallbackToOffline(mode)) throw e
-                        openOffline(itemId, episodeId, startOverride)
+                        openOffline(itemId, episodeId, startOverride, autoplay)
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
                     } catch (e: Exception) {
                         if (!DownloadPolicy.fallbackToOffline(mode)) throw e
                         android.util.Log.w(TAG, "live session failed, playing download for item $itemId")
-                        openOffline(itemId, episodeId, startOverride)
+                        openOffline(itemId, episodeId, startOverride, autoplay)
                     }
                 }
                 DownloadPolicy.PlayMode.OFFLINE_LOCAL ->
-                    openOffline(itemId, episodeId, startOverride)
+                    openOffline(itemId, episodeId, startOverride, autoplay)
                 DownloadPolicy.PlayMode.CANNOT_PLAY -> hopWait {
                     stateHolder.update {
                         it.copy(
@@ -382,7 +388,7 @@ class PlaybackEngine(
         }
     }
 
-    private suspend fun openSession(itemId: String, episodeId: String?, startOverride: Double, useLocal: Boolean) {
+    private suspend fun openSession(itemId: String, episodeId: String?, startOverride: Double, useLocal: Boolean, autoplay: Boolean = true) {
         closeSession()
         val session = withContext(Dispatchers.IO) {
             api.play(itemId, deviceId, episodeId)
@@ -402,11 +408,11 @@ class PlaybackEngine(
             val localUris = if (useLocal) catalog.localUris(itemId, episodeId.orEmpty()) else emptyList()
             val streamUris = session.tracks.map { api.streamUrl(session.id, it.index) }
             val uris = TrackUriResolver.playlistUris(useLocal, localUris, streamUris)
-            attachPlaylist(itemId, episodeId, session.title, session.author, session.tracks, session.chapters, session.currentTime, startOverride, session.id, uris, coverUrl(itemId, episodeId.orEmpty()))
+            attachPlaylist(itemId, episodeId, session.title, session.author, session.tracks, session.chapters, session.currentTime, startOverride, session.id, uris, coverUrl(itemId, episodeId.orEmpty()), autoplay)
         }
     }
 
-    private suspend fun openOffline(itemId: String, episodeId: String?, startOverride: Double) {
+    private suspend fun openOffline(itemId: String, episodeId: String?, startOverride: Double, autoplay: Boolean = true) {
         closeSession()
         val sidecar = catalog.sidecar(itemId, episodeId.orEmpty())
         val uris = catalog.localUris(itemId, episodeId.orEmpty())
@@ -469,7 +475,7 @@ class PlaybackEngine(
             val chapters = sidecar.chapters.map {
                 io.github.miniaudiobookshelf.core.Chapter(id = it.id, start = it.start, end = it.end, title = it.title)
             }
-            attachPlaylist(itemId, episodeId, sidecar.title, sidecar.author, tracks, chapters, start, start, local.id, uris, coverUrl(itemId, episodeId.orEmpty()))
+            attachPlaylist(itemId, episodeId, sidecar.title, sidecar.author, tracks, chapters, start, start, local.id, uris, coverUrl(itemId, episodeId.orEmpty()), autoplay)
         }
     }
 
@@ -495,6 +501,7 @@ class PlaybackEngine(
         newSessionId: String,
         uris: List<String>,
         artUrl: String,
+        autoplay: Boolean = true,
     ) {
         sessionId = newSessionId
         lastServerCurrentTime = serverCurrentTime
@@ -513,7 +520,7 @@ class PlaybackEngine(
                 timeline = timeline,
                 duration = timeline.totalDuration,
                 rate = rate,
-                intended = IntendedState.PLAYING,
+                intended = if (autoplay) IntendedState.PLAYING else IntendedState.PAUSED,
                 statusMessage = "",
                 retryAvailable = false,
                 stalled = false,
@@ -550,7 +557,12 @@ class PlaybackEngine(
         player.setMediaItems(items, playlistIndex.coerceAtMost((items.size - 1).coerceAtLeast(0)), localMs)
         applyRate()
         player.prepare()
-        player.play()
+        if (autoplay) {
+            player.play()
+        } else {
+            // Session reopened only so sync can continue: stay cued + paused.
+            player.pause()
+        }
         startPositionTimer()
     }
 
