@@ -426,6 +426,25 @@ object Models {
         )
     }
 
+    /**
+     * Fill in progress for items whose payload carried none. List endpoints
+     * (minified items, search, recent episodes) do not embed a progress
+     * object, so callers attach rows from GET /api/me/progress instead.
+     * Items that already have progress keep it; matching is by
+     * (libraryItemId, episodeId).
+     */
+    fun attachProgress(items: List<LibraryItem>, allProgress: List<MediaProgress>): List<LibraryItem> {
+        if (items.isEmpty() || allProgress.isEmpty()) return items
+        val byKey = allProgress.associateBy { it.libraryItemId + "\n" + it.episodeId }
+        return items.map { item ->
+            if (item.progress != null) {
+                item
+            } else {
+                byKey[item.id + "\n" + item.episodeId]?.let { item.copy(progress = it) } ?: item
+            }
+        }
+    }
+
     fun parseProgressList(json: String): List<MediaProgress> {
         val element = try {
             ApiClient.json.parseToJsonElement(json)
